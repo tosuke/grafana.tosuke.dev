@@ -1,0 +1,40 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "grafana",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-16",
+  "cache": {
+    "enabled": true,
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+  },
+  "containers": [
+    {
+      "class_name": "Grafana",
+      "image": "./Dockerfile",
+      "instance_type": "basic",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "GRAFANA",
+        "class_name": "Grafana",
+      },
+    ],
+  },
+  "r2_buckets": [
+    {
+      "binding": "GRAFANA_LITESTREAM_BUCKET",
+      "bucket_name": "grafana-ls",
+    },
+  ],
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["Grafana"],
+    },
+  ],
+}

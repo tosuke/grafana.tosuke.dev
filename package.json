@@ -1,0 +1,40 @@
+{
+  "name": "grafana.tosuke.dev",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "WRANGLER_WRITE_LOGS=false vitest run",
+    "generate": "run-p _generate:*",
+    "_generate:wrangler": "wrangler types",
+    "lint": "run-p _lint:*",
+    "_lint:oxfmt": "oxfmt --check .",
+    "_lint:oxlint": "oxlint -c .oxlintrc.json",
+    "_lint:tsc": "tsc --noEmit -p tsconfig.json",
+    "fix": "run-s _fix:*",
+    "_fix:oxfmt": "oxfmt --write .",
+    "_fix:oxlint": "oxlint -c .oxlintrc.json --fix"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "^0.3.7",
+    "hono": "^4.12.34"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.20.1",
+    "npm-run-all2": "^9.0.3",
+    "oxfmt": "^0.62.0",
+    "oxlint": "^1.77.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.118.0"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.19.0",
+      "onFail": "download"
+    }
+  }
+}
