@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
     "test": "WRANGLER_WRITE_LOGS=false vitest run",
     "generate": "run-p _generate:*",
     "_generate:wrangler": "wrangler types",
