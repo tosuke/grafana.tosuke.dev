@@ -17,7 +17,6 @@
     "_fix:oxfmt": "oxfmt --write .",
     "_fix:oxlint": "oxlint -c .oxlintrc.json --fix"
   },
-  "packageManager": "pnpm@11.19.0",
   "dependencies": {
     "@cloudflare/containers": "^0.3.7",
     "hono": "^4.12.34"
@@ -31,5 +30,6 @@
     "typescript": "^7.0.2",
     "vitest": "^4.1.10",
     "wrangler": "^4.118.0"
-  }
+  },
+  "packageManager": "pnpm@11.19.0"
 }

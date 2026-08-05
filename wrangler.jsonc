@@ -23,18 +23,20 @@
         "name": "GRAFANA",
         "class_name": "Grafana",
       },
+      {
+        "name": "WEBDAV_TEST",
+        "class_name": "WebDavTest",
+      },
     ],
   },
-  "r2_buckets": [
-    {
-      "binding": "GRAFANA_LITESTREAM_BUCKET",
-      "bucket_name": "grafana-ls",
-    },
-  ],
   "migrations": [
     {
       "tag": "v1",
       "new_sqlite_classes": ["Grafana"],
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["WebDavTest"],
     },
   ],
 }

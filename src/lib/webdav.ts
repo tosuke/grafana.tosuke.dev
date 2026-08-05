@@ -4,8 +4,80 @@ const DAV_HEADERS = {
   Allow: "OPTIONS, GET, HEAD, PUT, DELETE, MKCOL, MOVE, COPY, PROPFIND",
   DAV: "1",
 };
+const CHUNK_SIZE = 1.5 * 1024 * 1024;
 
-type Resource = { kind: "file"; object: R2Object } | { kind: "collection"; object?: R2Object };
+type File = {
+  inodeId: number;
+  contentLength: number;
+  contentType: string | null;
+  etag: string;
+  lastModified: number;
+};
+
+type Resource = { kind: "file"; file: File } | { kind: "collection" };
+
+type Migration = {
+  version: number;
+  statements: string[];
+};
+
+const migrations: Migration[] = [
+  {
+    version: 1,
+    statements: [
+      `
+        CREATE TABLE webdav_inodes (
+          id INTEGER PRIMARY KEY,
+          content_length INTEGER NOT NULL,
+          content_type TEXT,
+          etag TEXT NOT NULL,
+          last_modified INTEGER NOT NULL
+        )
+      `,
+      `
+        CREATE TABLE webdav_chunks (
+          inode_id INTEGER NOT NULL,
+          chunk_index INTEGER NOT NULL,
+          body BLOB NOT NULL,
+          PRIMARY KEY (inode_id, chunk_index)
+        )
+      `,
+      `
+        CREATE TABLE webdav_paths (
+          path TEXT PRIMARY KEY,
+          inode_id INTEGER NOT NULL
+        )
+      `,
+    ],
+  },
+];
+
+function migrate(storage: DurableObjectStorage): void {
+  storage.transactionSync(() => {
+    const sql = storage.sql;
+    sql.exec(`
+      CREATE TABLE IF NOT EXISTS webdav_migrations (
+        version INTEGER PRIMARY KEY,
+        applied_at INTEGER NOT NULL
+      )
+    `);
+    const applied = new Set(
+      sql
+        .exec<{ version: number }>("SELECT version FROM webdav_migrations")
+        .toArray()
+        .map((migration) => migration.version),
+    );
+    for (const migration of migrations) {
+      if (applied.has(migration.version)) continue;
+      for (const statement of migration.statements) sql.exec(statement);
+      sql.exec(
+        "INSERT INTO webdav_migrations (version, applied_at) VALUES (?, ?)",
+        migration.version,
+        Date.now(),
+      );
+    }
+  });
+}
 
 function escapeXml(value: string): string {
   return value
@@ -28,7 +100,6 @@ function keyFromPathname(pathname: string): string | null {
       return null;
     }
   });
-
   if (
     decoded.some(
       (part) =>
@@ -45,37 +116,98 @@ function keyFromPathname(pathname: string): string | null {
   return decoded.join("/");
 }
 
-function collectionMarker(key: string): string {
+function collectionPrefix(key: string): string {
   return `${key}/`;
 }
 
-async function resource(bucket: R2Bucket, key: string): Promise<Resource | null> {
-  if (key.length === 0) return { kind: "collection" };
-
-  const object = await bucket.head(key);
-  if (object) return { kind: "file", object };
-
-  const marker = await bucket.head(collectionMarker(key));
-  if (
-    marker ||
-    (await bucket.list({ prefix: collectionMarker(key), limit: 1 })).objects.length > 0
-  ) {
-    return marker ? { kind: "collection", object: marker } : { kind: "collection" };
-  }
-  return null;
+function likePrefix(prefix: string): string {
+  return `${prefix.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
 }
 
-async function deleteCollection(bucket: R2Bucket, key: string): Promise<void> {
-  let cursor: string | undefined;
-  do {
-    const page = await bucket.list({
-      prefix: collectionMarker(key),
-      limit: 1000,
-      ...(cursor ? { cursor } : {}),
-    });
-    if (page.objects.length > 0) await bucket.delete(page.objects.map((object) => object.key));
-    cursor = page.truncated ? page.cursor : undefined;
-  } while (cursor);
+function fileFrom(row: {
+  inode_id: number;
+  content_length: number;
+  content_type: string | null;
+  etag: string;
+  last_modified: number;
+}): File {
+  return {
+    inodeId: row.inode_id,
+    contentLength: row.content_length,
+    contentType: row.content_type,
+    etag: row.etag,
+    lastModified: row.last_modified,
+  };
+}
+
+function getFile(sql: SqlStorage, key: string): File | null {
+  const row = sql
+    .exec<{
+      inode_id: number;
+      content_length: number;
+      content_type: string | null;
+      etag: string;
+      last_modified: number;
+    }>(
+      "SELECT i.id AS inode_id, i.content_length, i.content_type, i.etag, i.last_modified FROM webdav_paths AS p JOIN webdav_inodes AS i ON i.id = p.inode_id WHERE p.path = ?",
+      key,
+    )
+    .toArray()
+    .at(0);
+  return row ? fileFrom(row) : null;
+}
+
+function readFile(sql: SqlStorage, inodeId: number): ReadableStream<Uint8Array> {
+  const iterator = sql
+    .exec<{ body: ArrayBuffer }>(
+      "SELECT body FROM webdav_chunks WHERE inode_id = ? ORDER BY chunk_index",
+      inodeId,
+    )
+    [Symbol.iterator]();
+  return new ReadableStream({
+    pull(controller) {
+      const next = iterator.next();
+      if (next.done) controller.close();
+      else controller.enqueue(new Uint8Array(next.value.body));
+    },
+    cancel() {
+      iterator.return?.();
+    },
+  });
+}
+
+function collectionExists(sql: SqlStorage, key: string): boolean {
+  return (
+    sql
+      .exec<{ has_children: number }>(
+        "SELECT EXISTS(SELECT 1 FROM webdav_paths WHERE path LIKE ? ESCAPE '\\') AS has_children",
+        likePrefix(collectionPrefix(key)),
+      )
+      .one().has_children === 1
+  );
+}
+
+function resource(sql: SqlStorage, key: string): Resource | null {
+  if (key.length === 0) return { kind: "collection" };
+  const file = getFile(sql, key);
+  if (file) return { kind: "file", file };
+  return collectionExists(sql, key) ? { kind: "collection" } : null;
+}
+
+function deleteFile(sql: SqlStorage, key: string): void {
+  sql.exec("DELETE FROM webdav_paths WHERE path = ?", key);
+  deleteOrphanedInodes(sql);
+}
+
+function deleteOrphanedInodes(sql: SqlStorage): void {
+  sql.exec("DELETE FROM webdav_chunks WHERE inode_id NOT IN (SELECT inode_id FROM webdav_paths)");
+  sql.exec("DELETE FROM webdav_inodes WHERE id NOT IN (SELECT inode_id FROM webdav_paths)");
+}
+
+function deleteCollection(sql: SqlStorage, key: string): void {
+  const paths = likePrefix(collectionPrefix(key));
+  sql.exec("DELETE FROM webdav_paths WHERE path LIKE ? ESCAPE '\\'", paths);
+  deleteOrphanedInodes(sql);
 }
 
 function href(request: Request, requestedKey: string, key: string, collection: boolean): string {
@@ -94,44 +226,44 @@ function propResponse(
   value: Resource,
 ): string {
   const isCollection = value.kind === "collection";
-  const object = value.kind === "file" ? value.object : value.object;
+  const file = value.kind === "file" ? value.file : undefined;
   const displayName = key.split("/").at(-1) ?? "";
   const properties = [
     `<d:resourcetype>${isCollection ? "<d:collection/>" : ""}</d:resourcetype>`,
     xml`<d:displayname>${displayName}</d:displayname>`,
-    object ? `<d:getlastmodified>${object.uploaded.toUTCString()}</d:getlastmodified>` : "",
-    !isCollection && object ? `<d:getcontentlength>${object.size}</d:getcontentlength>` : "",
-    !isCollection && object?.httpMetadata?.contentType
-      ? xml`<d:getcontenttype>${object.httpMetadata.contentType}</d:getcontenttype>`
+    file
+      ? `<d:getlastmodified>${new Date(file.lastModified).toUTCString()}</d:getlastmodified>`
       : "",
-    object ? xml`<d:getetag>${object.httpEtag}</d:getetag>` : "",
+    file ? `<d:getcontentlength>${file.contentLength}</d:getcontentlength>` : "",
+    file?.contentType ? xml`<d:getcontenttype>${file.contentType}</d:getcontenttype>` : "",
+    file ? xml`<d:getetag>${file.etag}</d:getetag>` : "",
   ].join("");
   return `<d:response><d:href>${xml`${href(request, requestedKey, key, isCollection)}`}</d:href><d:propstat><d:prop>${properties}</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>`;
 }
 
-async function collectionChildren(
-  bucket: R2Bucket,
-  key: string,
-): Promise<Array<[string, Resource]>> {
-  const prefix = key.length === 0 ? "" : collectionMarker(key);
-  const children: Array<[string, Resource]> = [];
-  let cursor: string | undefined;
-  do {
-    const page = await bucket.list({
-      prefix,
-      delimiter: "/",
-      limit: 1000,
-      ...(cursor ? { cursor } : {}),
-    });
-    for (const object of page.objects) {
-      if (object.key !== prefix) children.push([object.key, { kind: "file", object }]);
-    }
-    for (const childPrefix of page.delimitedPrefixes) {
-      children.push([childPrefix.slice(0, -1), { kind: "collection" }]);
-    }
-    cursor = page.truncated ? page.cursor : undefined;
-  } while (cursor);
-  return children;
+function collectionChildren(sql: SqlStorage, key: string): Array<[string, Resource]> {
+  const prefix = key.length === 0 ? "" : collectionPrefix(key);
+  const rows = sql
+    .exec<{
+      inode_id: number;
+      path: string;
+      content_length: number;
+      content_type: string | null;
+      etag: string;
+      last_modified: number;
+    }>(
+      "SELECT p.path, i.id AS inode_id, i.content_length, i.content_type, i.etag, i.last_modified FROM webdav_paths AS p JOIN webdav_inodes AS i ON i.id = p.inode_id WHERE p.path LIKE ? ESCAPE '\\' ORDER BY p.path",
+      likePrefix(prefix),
+    )
+    .toArray();
+  const children = new Map<string, Resource>();
+  for (const row of rows) {
+    const relativeKey = row.path.slice(prefix.length);
+    const slash = relativeKey.indexOf("/");
+    if (slash === -1) children.set(row.path, { kind: "file", file: fileFrom(row) });
+    else children.set(`${prefix}${relativeKey.slice(0, slash)}`, { kind: "collection" });
+  }
+  return [...children.entries()];
 }
 
 function destinationKey(request: Request): string | null {
@@ -147,8 +279,77 @@ function destinationKey(request: Request): string | null {
   }
 }
 
-/** Creates a WebDAV application backed by an R2 bucket. */
-export function webdav(bucket: R2Bucket) {
+function createInode(storage: DurableObjectStorage): number {
+  storage.sql.exec(
+    "INSERT INTO webdav_inodes (content_length, content_type, etag, last_modified) VALUES (0, NULL, '', 0)",
+  );
+  return storage.sql.exec<{ id: number }>("SELECT last_insert_rowid() AS id").one().id;
+}
+
+function finishWrite(storage: DurableObjectStorage, key: string, file: File): void {
+  storage.sql.exec(
+    "UPDATE webdav_inodes SET content_length = ?, content_type = ?, etag = ?, last_modified = ? WHERE id = ?",
+    file.contentLength,
+    file.contentType,
+    file.etag,
+    file.lastModified,
+    file.inodeId,
+  );
+  storage.sql.exec("INSERT INTO webdav_paths (path, inode_id) VALUES (?, ?)", key, file.inodeId);
+}
+
+async function writeChunks(
+  storage: DurableObjectStorage,
+  inodeId: number,
+  body: ReadableStream<Uint8Array> | null,
+): Promise<number> {
+  const reader = body?.getReader();
+  const buffer = new Uint8Array(CHUNK_SIZE);
+  let buffered = 0;
+  let chunkIndex = 0;
+  let contentLength = 0;
+  const writeChunk = (chunk: ArrayBuffer) => {
+    storage.sql.exec(
+      "INSERT INTO webdav_chunks (inode_id, chunk_index, body) VALUES (?, ?, ?)",
+      inodeId,
+      chunkIndex++,
+      chunk,
+    );
+  };
+  try {
+    while (reader) {
+      const next = await reader.read();
+      if (next.done) break;
+      for (let offset = 0; offset < next.value.byteLength;) {
+        const length = Math.min(CHUNK_SIZE - buffered, next.value.byteLength - offset);
+        buffer.set(next.value.subarray(offset, offset + length), buffered);
+        buffered += length;
+        offset += length;
+        contentLength += length;
+        if (buffered === CHUNK_SIZE) {
+          writeChunk(buffer.buffer.slice(0));
+          buffered = 0;
+        }
+      }
+    }
+    if (buffered > 0) {
+      writeChunk(buffer.buffer.slice(0, buffered));
+    }
+    return contentLength;
+  } catch (error) {
+    storage.sql.exec("DELETE FROM webdav_chunks WHERE inode_id = ?", inodeId);
+    storage.sql.exec("DELETE FROM webdav_inodes WHERE id = ?", inodeId);
+    throw error;
+  } finally {
+    reader?.releaseLock();
+  }
+}
+
+/** Creates a WebDAV application backed by Durable Object SQLite tables. */
+export function webdav(storage: DurableObjectStorage) {
+  const sql = storage.sql;
+  migrate(storage);
+
   const app = new Hono<{ Variables: { key: string } }>();
 
   app.use("*", async (c, next) => {
@@ -158,87 +359,68 @@ export function webdav(bucket: R2Bucket) {
     await next();
   });
 
-  app.options("*", () => {
-    // Litestream's WebDAV client requires a successful OPTIONS probe to
-    // return 200 (rather than the otherwise-valid 204 response).
-    return new Response(null, { headers: DAV_HEADERS });
+  app.options("*", () => new Response(null, { headers: DAV_HEADERS }));
+
+  app.get("*", (c) => {
+    const file = getFile(sql, c.get("key"));
+    if (!file) return c.text("Not found", 404);
+    const headers = new Headers({
+      ETag: file.etag,
+      "Content-Length": String(file.contentLength),
+    });
+    if (file.contentType) headers.set("Content-Type", file.contentType);
+    return new Response(readFile(sql, file.inodeId), { headers });
   });
 
-  app.get("*", async (c) => {
-    const key = c.get("key");
-    const object = await bucket.get(key);
-    if (!object) return c.text("Not found", 404);
-    const headers = new Headers();
-    object.writeHttpMetadata(headers);
-    headers.set("ETag", object.httpEtag);
-    headers.set("Content-Length", String(object.size));
-    return new Response(object.body, { headers });
-  });
-
-  app.on("HEAD", "*", async (c) => {
-    const key = c.get("key");
-    const object = await bucket.head(key);
-    if (!object) return c.text("Not found", 404);
-    const headers = new Headers();
-    object.writeHttpMetadata(headers);
-    headers.set("ETag", object.httpEtag);
-    headers.set("Content-Length", String(object.size));
+  app.on("HEAD", "*", (c) => {
+    const file = getFile(sql, c.get("key"));
+    if (!file) return c.text("Not found", 404);
+    const headers = new Headers({ ETag: file.etag, "Content-Length": String(file.contentLength) });
+    if (file.contentType) headers.set("Content-Type", file.contentType);
     return new Response(null, { headers });
   });
 
   app.put("*", async (c) => {
     const key = c.get("key");
-    // This WebDAV namespace reserves paths ending in "/" for collections.
-    // R2 prefixes are implicit, so checking whether an un-suffixed key has
-    // descendants would only add reads without changing Litestream's usage.
     if (key.length === 0 || c.req.path.endsWith("/"))
       return c.text("Cannot overwrite a collection", 409);
-    const existing = await bucket.head(key);
-    const headers = c.req.raw.headers;
-    const object = await bucket.put(key, c.req.raw.body, { httpMetadata: headers });
-    return new Response(null, {
-      status: existing ? 204 : 201,
-      headers: { ETag: object.httpEtag },
-    });
+    const existing = getFile(sql, key);
+    deleteFile(sql, key);
+    const inodeId = createInode(storage);
+    const contentLength = await writeChunks(storage, inodeId, c.req.raw.body);
+    const file: File = {
+      inodeId,
+      contentLength,
+      contentType: c.req.header("Content-Type") ?? null,
+      etag: `"${crypto.randomUUID()}"`,
+      lastModified: Date.now(),
+    };
+    finishWrite(storage, key, file);
+    return new Response(null, { status: existing ? 204 : 201, headers: { ETag: file.etag } });
   });
 
-  app.delete("*", async (c) => {
+  app.delete("*", (c) => {
     const key = c.get("key");
-    // R2 delete operations are idempotent. As with PUT, a trailing slash
-    // selects the implicit collection namespace without a prefix probe.
-    if (c.req.path.endsWith("/")) await deleteCollection(bucket, key);
-    else await bucket.delete(key);
+    storage.transactionSync(() => {
+      if (c.req.path.endsWith("/")) deleteCollection(sql, key);
+      else deleteFile(sql, key);
+    });
     return new Response(null, { status: 204 });
   });
 
-  app.on("MKCOL", "*", () => {
-    // R2 has implicit collections: a prefix needs no marker object before
-    // PUT creates an object beneath it. gowebdav treats 405 as success for
-    // an existing collection, so avoid R2 reads and marker writes here.
-    return new Response(null, { status: 405 });
-  });
+  app.on("MKCOL", "*", () => new Response(null, { status: 405 }));
 
   app.on("PROPFIND", "*", async (c) => {
+    await c.req.raw.arrayBuffer();
     const key = c.get("key");
-    if (key.length === 0 || c.req.path.endsWith("/")) {
-      const children = await collectionChildren(bucket, key);
-      if (key.length > 0 && children.length === 0) return new Response(null, { status: 404 });
-      const responses = [propResponse(c.req.raw, key, key, { kind: "collection" })];
-      if (c.req.header("Depth") !== "0") {
-        for (const [childKey, child] of children) {
-          responses.push(propResponse(c.req.raw, key, childKey, child));
-        }
+    const selected = resource(sql, key);
+    if (!selected) return new Response(null, { status: 404 });
+    const responses = [propResponse(c.req.raw, key, key, selected)];
+    if (selected.kind === "collection" && c.req.header("Depth") !== "0") {
+      for (const [childKey, child] of collectionChildren(sql, key)) {
+        responses.push(propResponse(c.req.raw, key, childKey, child));
       }
-      return c.body(
-        `<?xml version="1.0" encoding="utf-8"?><d:multistatus xmlns:d="DAV:">${responses.join("")}</d:multistatus>`,
-        207,
-        { "Content-Type": "application/xml; charset=utf-8" },
-      );
     }
-
-    const object = await bucket.head(key);
-    if (!object) return new Response(null, { status: 404 });
-    const responses = [propResponse(c.req.raw, key, key, { kind: "file", object })];
     return c.body(
       `<?xml version="1.0" encoding="utf-8"?><d:multistatus xmlns:d="DAV:">${responses.join("")}</d:multistatus>`,
       207,
@@ -246,62 +428,45 @@ export function webdav(bucket: R2Bucket) {
     );
   });
 
-  app.on(["COPY", "MOVE"], "*", async (c) => {
+  app.on(["COPY", "MOVE"], "*", (c) => {
     const key = c.get("key");
-    const source = await resource(bucket, key);
+    const source = resource(sql, key);
     const targetKey = destinationKey(c.req.raw);
     if (!source) return c.text("Not found", 404);
     if (targetKey === null || targetKey.length === 0 || targetKey === key)
       return c.text("Invalid destination", 400);
-    const destination = await resource(bucket, targetKey);
+    const destination = resource(sql, targetKey);
     if (destination && c.req.header("Overwrite")?.toUpperCase() === "F")
       return c.text("Destination exists", 412);
-    if (destination) {
-      if (destination.kind === "collection") await deleteCollection(bucket, targetKey);
-      else await bucket.delete(targetKey);
-    }
-    if (source.kind === "file") {
-      const body = await bucket.get(key);
-      if (!body) return c.text("Not found", 404);
-      await bucket.put(
-        targetKey,
-        body.body,
-        body.httpMetadata ? { httpMetadata: body.httpMetadata } : undefined,
-      );
-      if (c.req.method === "MOVE") await bucket.delete(key);
-    } else {
-      const prefix = collectionMarker(key);
-      let cursor: string | undefined;
-      do {
-        const page = await bucket.list(
-          cursor ? { prefix, cursor, limit: 1000 } : { prefix, limit: 1000 },
+    storage.transactionSync(() => {
+      if (destination) {
+        if (destination.kind === "collection") deleteCollection(sql, targetKey);
+        else deleteFile(sql, targetKey);
+      }
+      if (source.kind === "file") {
+        sql.exec(
+          "INSERT INTO webdav_paths (path, inode_id) VALUES (?, ?)",
+          targetKey,
+          source.file.inodeId,
         );
-        await Promise.all(
-          page.objects.map((object) =>
-            bucket
-              .get(object.key)
-              .then(
-                (body) =>
-                  body &&
-                  bucket.put(
-                    `${collectionMarker(targetKey)}${object.key.slice(prefix.length)}`,
-                    body.body,
-                    body.httpMetadata ? { httpMetadata: body.httpMetadata } : undefined,
-                  ),
-              ),
-          ),
+        if (c.req.method === "MOVE") deleteFile(sql, key);
+      } else {
+        const sourcePrefix = collectionPrefix(key);
+        const targetPrefix = collectionPrefix(targetKey);
+        const start = sourcePrefix.length + 1;
+        const paths = likePrefix(sourcePrefix);
+        sql.exec(
+          "INSERT INTO webdav_paths SELECT ? || substr(path, ?), inode_id FROM webdav_paths WHERE path LIKE ? ESCAPE '\\'",
+          targetPrefix,
+          start,
+          paths,
         );
-        if (c.req.method === "MOVE" && page.objects.length > 0)
-          await bucket.delete(page.objects.map((object) => object.key));
-        cursor = page.truncated ? page.cursor : undefined;
-      } while (cursor);
-    }
+        if (c.req.method === "MOVE") deleteCollection(sql, key);
+      }
+    });
     return new Response(null, { status: destination ? 204 : 201 });
   });
 
-  app.all("*", () => {
-    return new Response(null, { status: 405, headers: DAV_HEADERS });
-  });
-
+  app.all("*", () => new Response(null, { status: 405, headers: DAV_HEADERS }));
   return app;
 }
