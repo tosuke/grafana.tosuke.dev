@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "grafana",
+  "main": "src/index.stub.ts",
+  "compatibility_date": "2026-06-16",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "GRAFANA",
+        "class_name": "Grafana",
+      },
+      {
+        "name": "LTX_TEST",
+        "class_name": "LtxTest",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["Grafana", "LtxTest"],
+    },
+  ],
+}
