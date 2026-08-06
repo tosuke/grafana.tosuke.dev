@@ -1,9 +1,10 @@
 import { Container } from "@cloudflare/containers";
 import { env } from "cloudflare:workers";
-import { newWebSocketRpcSession } from "capnweb";
-import { LTXStorage } from "./lib/ltx2";
+import { LTXStorage } from "./lib/ltx";
+import { ai } from "./lib/ai";
 
 const REPLICA_HOST = "replica.worker";
+const AI_HOST = "ai.worker";
 
 export function grafana(): DurableObjectStub<Grafana> {
   return env.GRAFANA.getByName("grafana");
@@ -13,20 +14,7 @@ export class Grafana extends Container {
   defaultPort = 3000;
   sleepAfter = "1m";
   enableInternet = false;
-  private replicaSocket: WebSocket | undefined;
-  private replicaSession: ReturnType<typeof newWebSocketRpcSession> | undefined;
   private ltxStorage = new LTXStorage(this.ctx);
-
-  private closeReplica(): void {
-    const session = this.replicaSession;
-    if (session) {
-      const dispose = (session as unknown as { [key: symbol]: unknown })[Symbol.for("dispose")];
-      if (typeof dispose === "function") dispose.call(session);
-    }
-    this.replicaSocket?.close(1000, "Grafana container stopped");
-    this.replicaSocket = undefined;
-    this.replicaSession = undefined;
-  }
 
   private acceptReplica(): Response {
     const ws = this.ltxStorage.accept();
@@ -59,4 +47,5 @@ export class Grafana extends Container {
 Grafana.outboundByHost = {
   [REPLICA_HOST]: (req, env, ctx) =>
     env.GRAFANA.get(env.GRAFANA.idFromString(ctx.containerId)).fetch(req),
+  [AI_HOST]: (req) => ai.fetch(req),
 };

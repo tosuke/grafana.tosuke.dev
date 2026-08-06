@@ -6,6 +6,9 @@
   "cache": {
     "enabled": true,
   },
+  "ai": {
+    "binding": "AI",
+  },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
@@ -26,10 +29,6 @@
         "name": "GRAFANA",
         "class_name": "Grafana",
       },
-      {
-        "name": "LTX_TEST",
-        "class_name": "LtxTest",
-      },
     ],
   },
   "migrations": [
@@ -45,6 +44,10 @@
       "tag": "v3",
       "new_sqlite_classes": ["LtxTest"],
       "deleted_classes": ["WebDavTest"],
+    },
+    {
+      "tag": "v4",
+      "deleted_classes": ["LtxTest"],
     },
   ],
 }
