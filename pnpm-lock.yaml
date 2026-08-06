@@ -213,6 +213,9 @@ importers:
       hono:
         specifier: ^4.12.34
         version: 4.12.34
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@cloudflare/vitest-pool-workers':
         specifier: ^0.20.1
