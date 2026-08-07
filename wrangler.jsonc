@@ -6,15 +6,18 @@
   "cache": {
     "enabled": true,
   },
-  "ai": {
-    "binding": "AI",
-  },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
     "traces": {
       "enabled": true,
     },
+  },
+  "vars": {
+    "ENV": "env",
+  },
+  "ai": {
+    "binding": "AI",
   },
   "containers": [
     {
@@ -50,4 +53,30 @@
       "deleted_classes": ["LtxTest"],
     },
   ],
+  "env": {
+    "production": {
+      "vars": {
+        "ENV": "prod",
+      },
+      "ai": {
+        "binding": "AI",
+      },
+      "containers": [
+        {
+          "name": "grafana",
+          "class_name": "Grafana",
+          "image": "./grafana/Dockerfile",
+          "instance_type": "basic",
+        },
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "GRAFANA",
+            "class_name": "Grafana",
+          },
+        ],
+      },
+    },
+  },
 }
