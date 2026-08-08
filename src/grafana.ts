@@ -12,28 +12,39 @@ export function grafana(): DurableObjectStub<Grafana> {
 
 export class Grafana extends Container {
   defaultPort = 3000;
-  sleepAfter = env.ENV === "prod" ? "5m" : "30s";
+  sleepAfter = "5m";
   enableInternet = false;
   private ltxStorage = new LTXStorage(this.ctx);
-  #live2live = new WeakMap<WebSocket, WebSocket>();
+  #live2live = new Map<WebSocket, WebSocket>();
 
   override async fetch(request: Request): Promise<Response> {
-    if (new URL(request.url).hostname === REPLICA_HOST) {
+    const url = new URL(request.url);
+    if (url.hostname === REPLICA_HOST) {
       const ws = this.ltxStorage.accept();
       return new Response(null, { status: 101, webSocket: ws });
     }
 
-    await super.startAndWaitForPorts({
-      ports: 3000,
-      cancellationOptions: {
-        abort: request.signal,
-        instanceGetTimeoutMS: 60_000,
-        portReadyTimeoutMS: 60_000,
-      },
-    });
-
-    if (request.method === "GET" && new URL(request.url).pathname === "/api/live/ws") {
-      const resp = await this.ctx.container?.getTcpPort(this.defaultPort).fetch(request);
+    if (request.method === "GET" && url.pathname === "/api/live/ws") {
+      const container = this.ctx.container;
+      if (!container) {
+        console.error("Container is not available");
+        return new Response("Container is not available", { status: 500 });
+      }
+      if (!container.running) {
+        await super.start();
+      }
+      await super.waitForPort({
+        signal: request.signal,
+        portToCheck: this.defaultPort,
+        waitInterval: 1000,
+        retries: 60,
+      });
+      const resp = await this.ctx.container?.getTcpPort(this.defaultPort).fetch(
+        new Request(request.url.replace(/^https/, "http"), {
+          method: "GET",
+          headers: request.headers,
+        }),
+      );
       if (!resp) {
         console.error("Failed to connect to Grafana on port", this.defaultPort);
         return new Response("Failed to connect to Grafana", { status: 500 });
@@ -71,8 +82,8 @@ export class Grafana extends Container {
         server.send(event.data);
       });
 
-      if (!(await this.getSchedule("live-ping"))) {
-        await this.schedule(120, "ping", "live-ping");
+      if ((await this.listSchedules("ping")).length === 0) {
+        await this.schedule(120, "ping");
       }
 
       return new Response(null, { status: 101, webSocket: client, headers: resp.headers });
@@ -82,9 +93,20 @@ export class Grafana extends Container {
   }
 
   onStart() {
+    console.log("Grafana started");
     for (const ws of this.ctx.getWebSockets("grafana-live")) {
       ws.close(1000, "Grafana restarted");
     }
+  }
+
+  override async onActivityExpired() {
+    console.log("Grafana activity expired, closing live connections");
+    for (const ws of this.#live2live.values()) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close(1000, "Grafana activity expired");
+      }
+    }
+    await this.stop();
   }
 
   async ping() {
@@ -95,6 +117,7 @@ export class Grafana extends Container {
         ws.send("{}");
       }
     }
+    this.deleteSchedules("ping");
     if (hasLive) {
       await this.schedule(120, "ping");
     }
@@ -104,7 +127,6 @@ export class Grafana extends Container {
     await this.ltxStorage.handleMessage(ws, message);
 
     if (this.ctx.getTags(ws).includes("grafana-live")) {
-      if (message === "{}") return;
       const liveWs = this.#live2live.get(ws);
       if (!liveWs || liveWs.readyState !== WebSocket.OPEN) {
         console.error("Live WebSocket is not open for message:", message);
@@ -117,6 +139,14 @@ export class Grafana extends Container {
 
   async webSocketClose(ws: WebSocket): Promise<void> {
     this.ltxStorage.handleClose(ws);
+
+    if (this.ctx.getTags(ws).includes("grafana-live")) {
+      const liveWs = this.#live2live.get(ws);
+      this.#live2live.delete(ws);
+      if (liveWs && liveWs.readyState === WebSocket.OPEN) {
+        liveWs.close(1000, "Client disconnected");
+      }
+    }
   }
 }
 
