@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	github.com/benbjohnson/litestream v0.5.14
 	github.com/coder/websocket v1.8.14
-	github.com/superfly/ltx v0.5.1
+	github.com/superfly/ltx v0.5.2
 )
 
 require (
@@ -23,7 +23,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/pierrec/lz4/v4 v4.1.22 // indirect
+	github.com/pierrec/lz4/v4 v4.1.23 // indirect
 	github.com/prometheus/client_golang v1.17.0 // indirect
 	github.com/prometheus/client_model v0.5.0 // indirect
 	github.com/prometheus/common v0.45.0 // indirect
