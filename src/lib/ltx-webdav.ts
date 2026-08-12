@@ -1,6 +1,7 @@
-import { env, waitUntil, RpcTarget } from "cloudflare:workers";
+import { env, RpcTarget } from "cloudflare:workers";
 import { XMLParser } from "fast-xml-parser";
 import { Hono } from "hono";
+import { cache } from "hono/cache";
 import type { Context } from "hono";
 import * as z from "zod";
 
@@ -79,19 +80,16 @@ export function webdavApp(doStore: () => Rpc.Stub<DOLTXStore> | Rpc.Result<DOLTX
 
   app.on("PROPFIND", ltxFilePath, (c) => c.body(null, 501));
 
-  app.on(
-    ["HEAD", "GET"],
+  app.on(["GET", "HEAD"],
     ltxFilePath,
-    async (c, next) => {
-      const cache = await caches.open(ltxCacheName);
-      let resp = await cache.match(c.req.url);
-      if (!resp) {
-        await next();
-        resp = c.res;
-        if (200 <= c.res.status && c.res.status <= 299) {
-          waitUntil(cache.put(c.req.url, c.res.clone()));
-        }
-      }
+    cache({
+      cacheName: ltxCacheName,
+      cacheControl: "public, max-age=3600, immutable",
+    }),
+    async (c) => {
+      const resource = fileResource(c);
+      const { level, minTXID, maxTXID } = resource;
+      const resp = await store(level).getFile(level, minTXID, maxTXID);
       if (c.req.method === "HEAD") {
         return new Response(null, {
           status: resp.status,
@@ -99,11 +97,6 @@ export function webdavApp(doStore: () => Rpc.Stub<DOLTXStore> | Rpc.Result<DOLTX
         });
       }
       return resp;
-    },
-    async (c) => {
-      const resource = fileResource(c);
-      const { level, minTXID, maxTXID } = resource;
-      return store(level).getFile(level, minTXID, maxTXID);
     },
   );
 
@@ -252,7 +245,6 @@ export class DOLTXStore extends RpcTarget implements LTXFileStore {
     const headers = new Headers();
     headers.set("Content-Length", row.content_length.toString());
     headers.set("Content-Type", row.content_type);
-    headers.set("Cache-Control", "public, max-age=3600, immutable");
     if (row.etag) {
       headers.set("ETag", `"${row.etag}"`);
     }
@@ -374,7 +366,6 @@ export class R2LTXStore implements LTXFileStore {
     const headers = new Headers();
     object.writeHttpMetadata(headers);
     headers.set("Content-Length", object.size.toString());
-    headers.set("Cache-Control", "public, max-age=3600, immutable");
     headers.set("ETag", object.httpEtag);
     return new Response(object.body, { status: 200, headers });
   }

@@ -1,16 +1,19 @@
 import { Container } from "@cloudflare/containers";
-import { env } from "cloudflare:workers";
+import { env, waitUntil } from "cloudflare:workers";
 import { decodeWebDAVMethod, DOLTXStore, webdavApp } from "./lib/ltx-webdav";
 import { ai } from "./lib/ai";
+import { Litestream } from "./lib/litestream";
 
-const REPLICA_HOST = "replica.worker";
-const AI_HOST = "ai.worker";
+interface GrafanaRPC extends Rpc.DurableObjectBranded {
+  ltxStore(): DOLTXStore;
+  litestream(): Litestream;
+}
 
-export function grafana(): DurableObjectStub<Grafana> {
+export function grafana(): DurableObjectStub<GrafanaRPC> {
   return env.GRAFANA.getByName("grafana");
 }
 
-export class Grafana extends Container {
+export class Grafana extends Container implements GrafanaRPC {
   defaultPort = 3000;
   sleepAfter = "5m";
   enableInternet = false;
@@ -139,17 +142,33 @@ export class Grafana extends Container {
     }
   }
 
-  get ltxStore() {
+  ltxStore() {
     return new DOLTXStore(this.ctx);
+  }
+
+  litestream() {
+    return Litestream.create(
+      this.ctx,
+      "/usr/local/bin/litestream",
+      "/tmp/litestream.sock",
+      "/etc/litestream.yaml",
+    );
   }
 }
 
-const webdav = webdavApp(() => grafana().ltxStore);
+const REPLICA_HOST = "replica.worker";
+const AI_HOST = "ai.worker";
+
+const webdav = webdavApp(() => grafana().ltxStore());
 
 Grafana.outboundByHost = {
   [REPLICA_HOST]: async (req, env) => {
     req = decodeWebDAVMethod(req);
-    const response = await webdav.fetch(req, env);
+    const response = await webdav.fetch(req, env, {
+      waitUntil,
+      passThroughOnException() {},
+      props: {},
+    });
     console.log("replica.worker", req.method, req.url, response.status);
     return response;
   },

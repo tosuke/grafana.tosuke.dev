@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runInDurableObject } from "cloudflare:test";
+import {
+  createExecutionContext,
+  runInDurableObject,
+  waitOnExecutionContext,
+} from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { XMLParser } from "fast-xml-parser";
 import { decodeWebDAVMethod, webDAVMethodHeader, webdavApp } from "./ltx-webdav";
@@ -48,6 +52,13 @@ function parseMultiStatus(body: string): MultiStatus {
 function responseFor(body: MultiStatus, href: string): DAVResponse {
   const response = body.multistatus.response.find((item) => item.href === href);
   if (!response) throw new Error(`Missing DAV response for ${href}`);
+  return response;
+}
+
+async function fetchWithExecutionContext(app: Hono, request: Request): Promise<Response> {
+  const executionContext = createExecutionContext();
+  const response = await app.fetch(request, {}, executionContext);
+  await waitOnExecutionContext(executionContext);
   return response;
 }
 
@@ -193,7 +204,8 @@ describe("LTX WebDAV", () => {
       ]);
     });
 
-    const getResponse = await app.fetch(
+    const getResponse = await fetchWithExecutionContext(
+      app,
       new Request(`https://replica.worker${path}`, { method: "GET" }),
     );
     expect(getResponse.status).toBe(200);
@@ -241,7 +253,8 @@ describe("LTX WebDAV", () => {
     expect(putResponse.status).toBe(201);
     await expect(env.GRAFANA_LTX_BUCKET.head(key)).resolves.toMatchObject({ size: 3 });
 
-    const getResponse = await app.fetch(
+    const getResponse = await fetchWithExecutionContext(
+      app,
       new Request(`https://replica.worker${path}`, { method: "GET" }),
     );
     expect(getResponse.status).toBe(200);
