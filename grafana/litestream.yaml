@@ -1,0 +1,12 @@
+addr: ":9091"
+
+socket:
+  enabled: true
+  path: /tmp/litestream.sock
+
+dbs:
+  - path: /var/lib/grafana/grafana.db
+    restore-if-db-not-exists: true
+    replica:
+      url: webdav://127.0.0.1:8080/
+      sync-interval: 1s

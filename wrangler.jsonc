@@ -19,11 +19,18 @@
   "ai": {
     "binding": "AI",
   },
+  "r2_buckets": [
+    {
+      "binding": "GRAFANA_LTX_BUCKET",
+      "bucket_name": "grafana-ltx",
+    },
+  ],
   "containers": [
     {
       "class_name": "Grafana",
       "image": "./grafana/Dockerfile",
       "instance_type": "basic",
+      "max_instances": 1,
     },
   ],
   "durable_objects": {
@@ -52,31 +59,13 @@
       "tag": "v4",
       "deleted_classes": ["LtxTest"],
     },
-  ],
-  "env": {
-    "production": {
-      "vars": {
-        "ENV": "prod",
-      },
-      "ai": {
-        "binding": "AI",
-      },
-      "containers": [
-        {
-          "name": "grafana",
-          "class_name": "Grafana",
-          "image": "./grafana/Dockerfile",
-          "instance_type": "basic",
-        },
-      ],
-      "durable_objects": {
-        "bindings": [
-          {
-            "name": "GRAFANA",
-            "class_name": "Grafana",
-          },
-        ],
-      },
+    {
+      "tag": "v5",
+      "new_classes": ["LTXStore"],
     },
-  },
+    {
+      "tag": "v6",
+      "deleted_classes": ["LTXStore"],
+    }
+  ],
 }

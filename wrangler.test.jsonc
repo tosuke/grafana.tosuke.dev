@@ -6,22 +6,24 @@
   "vars": {
     "ENV": "dev",
   },
+  "r2_buckets": [
+    {
+      "binding": "GRAFANA_LTX_BUCKET",
+      "bucket_name": "grafana-ltx-test",
+    },
+  ],
   "durable_objects": {
     "bindings": [
       {
-        "name": "GRAFANA",
-        "class_name": "Grafana",
-      },
-      {
-        "name": "LTX_TEST",
-        "class_name": "LtxTest",
+        "name": "TEST",
+        "class_name": "Test",
       },
     ],
   },
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["Grafana", "LtxTest"],
+      "new_sqlite_classes": ["Test"],
     },
   ],
 }

@@ -1,2 +1,1 @@
-export * from "./index";
-export { LtxTest } from "./lib/ltx-test-do"
+export { Test } from "./lib/test-do";

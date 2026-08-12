@@ -1,6 +1,6 @@
 import { Container } from "@cloudflare/containers";
 import { env } from "cloudflare:workers";
-import { LTXStorage } from "./lib/ltx";
+import { decodeWebDAVMethod, DOLTXStore, webdavApp } from "./lib/ltx-webdav";
 import { ai } from "./lib/ai";
 
 const REPLICA_HOST = "replica.worker";
@@ -14,15 +14,10 @@ export class Grafana extends Container {
   defaultPort = 3000;
   sleepAfter = "5m";
   enableInternet = false;
-  private ltxStorage = new LTXStorage(this.ctx);
   #live2live = new Map<WebSocket, WebSocket>();
 
   override async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    if (url.hostname === REPLICA_HOST) {
-      const ws = this.ltxStorage.accept();
-      return new Response(null, { status: 101, webSocket: ws });
-    }
 
     if (request.method === "GET" && url.pathname === "/api/live/ws") {
       const container = this.ctx.container;
@@ -124,22 +119,17 @@ export class Grafana extends Container {
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
-    await this.ltxStorage.handleMessage(ws, message);
-
-    if (this.ctx.getTags(ws).includes("grafana-live")) {
-      const liveWs = this.#live2live.get(ws);
-      if (!liveWs || liveWs.readyState !== WebSocket.OPEN) {
-        console.error("Live WebSocket is not open for message:", message);
-        ws.close(1011, "Live WebSocket is not open");
-        return;
-      }
-      liveWs.send(message);
+    if (!this.ctx.getTags(ws).includes("grafana-live")) return;
+    const liveWs = this.#live2live.get(ws);
+    if (!liveWs || liveWs.readyState !== WebSocket.OPEN) {
+      console.error("Live WebSocket is not open for message:", message);
+      ws.close(1011, "Live WebSocket is not open");
+      return;
     }
+    liveWs.send(message);
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {
-    this.ltxStorage.handleClose(ws);
-
     if (this.ctx.getTags(ws).includes("grafana-live")) {
       const liveWs = this.#live2live.get(ws);
       this.#live2live.delete(ws);
@@ -148,10 +138,20 @@ export class Grafana extends Container {
       }
     }
   }
+
+  get ltxStore() {
+    return new DOLTXStore(this.ctx);
+  }
 }
 
+const webdav = webdavApp(() => grafana().ltxStore);
+
 Grafana.outboundByHost = {
-  [REPLICA_HOST]: (req, env, ctx) =>
-    env.GRAFANA.get(env.GRAFANA.idFromString(ctx.containerId)).fetch(req),
+  [REPLICA_HOST]: async (req, env) => {
+    req = decodeWebDAVMethod(req);
+    const response = await webdav.fetch(req, env);
+    console.log("replica.worker", req.method, req.url, response.status);
+    return response;
+  },
   [AI_HOST]: (req) => ai.fetch(req),
 };
