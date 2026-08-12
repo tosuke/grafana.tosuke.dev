@@ -4,7 +4,7 @@ go 1.26.1
 
 require (
 	github.com/benbjohnson/litestream v0.5.14
-	github.com/coder/websocket v1.8.14
+	github.com/coder/websocket v1.8.15
 	github.com/superfly/ltx v0.5.1
 )
 
