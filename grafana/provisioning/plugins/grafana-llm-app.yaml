@@ -11,6 +11,6 @@ apps:
         default: base
         mapping:
           base: "@cf/google/gemma-4-26b-a4b-it"
-          large: "@cf/zai-org/glm-5.2"
+          large: "@cf/deepseek-ai/deepseek-v4-pro-0813"
     secureJsonData:
       openAIKey: sk-dummy
