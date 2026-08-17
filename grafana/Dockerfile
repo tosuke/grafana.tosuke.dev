@@ -11,6 +11,8 @@ FROM litestream/litestream:0.5.16-scratch AS litestream
 
 FROM grafana/grafana:13.1.3 AS grafana-plugin-installer
 RUN grafana cli plugins install grafana-llm-app
+RUN grafana cli plugins install grafana-metricsdrilldown-app 2.5.0
+RUN grafana cli plugins install grafana-lokiexplore-app 2.5.1
 RUN grafana cli plugins install grafana-exploretraces-app
 
 FROM grafana/grafana:13.1.3-distroless
