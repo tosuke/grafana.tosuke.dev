@@ -1,0 +1,13 @@
+apiVersion: 1
+
+datasources:
+  - name: Home Prometheus
+    type: prometheus
+    access: proxy
+    url: http://home-prometheus.worker
+    isDefault: true
+    jsonData:
+      allowAsRecordingRulesTarget: false
+      defaultEditor: code
+      prometheusType: Prometheus
+      prometheusVersion: 2.50.1
