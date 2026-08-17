@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { create, fromBinary, toBinary, type MessageInitShape } from "@bufbuild/protobuf";
+import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { sizeDelimitedDecodeStream } from "@bufbuild/protobuf/wire";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import {

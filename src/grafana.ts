@@ -1,5 +1,5 @@
 import { Container } from "@cloudflare/containers";
-import { env, tracing, waitUntil } from "cloudflare:workers";
+import { env, tracing } from "cloudflare:workers";
 import { createWorkersAI } from "workers-ai-provider";
 import { decodeWebDAVMethod, DOLTXStore, webdavApp } from "./lib/ltx-webdav";
 import { createAi } from "./lib/ai";
@@ -260,11 +260,7 @@ const ai = createAi(
 Grafana.outboundByHost = {
   "replica.worker": async (req, env) => {
     req = decodeWebDAVMethod(req);
-    const response = await webdav.fetch(req, env, {
-      waitUntil,
-      passThroughOnException() {},
-      props: {},
-    });
+    const response = await webdav.fetch(req, env);
     return response;
   },
   "ai.worker": (req) => ai.fetch(req),
