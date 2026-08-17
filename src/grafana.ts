@@ -243,9 +243,9 @@ export class Grafana extends Container implements GrafanaRPC {
 }
 
 const webdav = webdavApp(() => grafana().ltxStore());
-const workersAI = createWorkersAI({ binding: env.AI });
 const ai = createAi(
   (modelId, { reasoningEffort }) => {
+    const workersAI = createWorkersAI({ binding: env.AI });
     const enableThinking = reasoningEffort != null && reasoningEffort != "none";
     return workersAI.chat(modelId, {
       reasoning_effort: enableThinking ? reasoningEffort : null,
