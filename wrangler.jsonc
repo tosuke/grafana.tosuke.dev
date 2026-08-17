@@ -14,7 +14,10 @@
     },
   },
   "vars": {
-    "ENV": "env",
+    "ENV": "production",
+  },
+  "secrets": {
+    "required": ["MACKEREL_APIKEY"],
   },
   "ai": {
     "binding": "AI",
@@ -41,6 +44,76 @@
       },
     ],
   },
+  "services": [
+    {
+      "binding": "GRPC",
+      "service": "grpc-gateway",
+      "remote": true,
+    },
+  ],
+  "vpc_services": [
+    {
+      "binding": "HOME_PROMETHEUS",
+      "service_id": "01a00110-a4ea-77e2-9b16-d27cc9c9a192",
+      "remote": true,
+    },
+  ],
+  "version_metadata": {
+    "binding": "CF_VERSION_METADATA",
+  },
+  "env": {
+    "dev": {
+      "vars": {
+        "ENV": "development",
+      },
+      "secrets": {
+        "required": ["MACKEREL_APIKEY", "__DO_NOT_DEPLOY"],
+      },
+      "ai": {
+        "binding": "AI",
+        "remote": true,
+      },
+      "r2_buckets": [
+        {
+          "binding": "GRAFANA_LTX_BUCKET",
+          "bucket_name": "grafana-ltx",
+        },
+      ],
+      "containers": [
+        {
+          "class_name": "Grafana",
+          "image": "./grafana/Dockerfile",
+          "instance_type": "basic",
+          "max_instances": 1,
+        },
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "GRAFANA",
+            "class_name": "Grafana",
+          },
+        ],
+      },
+      "services": [
+        {
+          "binding": "GRPC",
+          "service": "grpc-gateway",
+          "remote": true,
+        },
+      ],
+      "vpc_services": [
+        {
+          "binding": "HOME_PROMETHEUS",
+          "service_id": "01a00110-a4ea-77e2-9b16-d27cc9c9a192",
+          "remote": true,
+        },
+      ],
+      "version_metadata": {
+        "binding": "CF_VERSION_METADATA",
+      },
+    },
+  },
   "migrations": [
     {
       "tag": "v1",
@@ -66,6 +139,6 @@
     {
       "tag": "v6",
       "deleted_classes": ["LTXStore"],
-    }
+    },
   ],
 }

@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --env dev",
     "deploy": "wrangler deploy",
-    "test": "WRANGLER_WRITE_LOGS=false vitest run",
+    "test": "WRANGLER_WRITE_LOGS=false vitest",
     "generate": "run-p _generate:*",
     "_generate:wrangler": "wrangler types",
     "lint": "run-p _lint:*",
@@ -18,16 +18,21 @@
     "_fix:oxlint": "oxlint -c .oxlintrc.json --fix"
   },
   "dependencies": {
+    "@buf/opentelemetry_opentelemetry.bufbuild_es": "2.13.0-20260722205108-41ecbd638b41.1",
+    "@buf/prometheus_prometheus.bufbuild_es": "2.13.0-20260707164124-2360da55afce.1",
+    "@bufbuild/protobuf": "^2.14.0",
     "@cloudflare/containers": "^0.3.7",
+    "@connectrpc/connect": "^2.1.2",
+    "@opentelemetry/semantic-conventions": "^1.43.0",
     "fast-xml-parser": "^5.10.1",
-    "hono": "^4.12.34",
+    "hono": "^4.13.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.20.1",
+    "@cloudflare/vitest-pool-workers": "^0.20.3",
     "npm-run-all2": "^9.0.3",
     "oxfmt": "^0.63.0",
-    "oxlint": "^1.77.0",
+    "oxlint": "^1.78.0",
     "oxlint-tsgolint": "^7.0.2001",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10",
