@@ -1,7 +1,8 @@
 import { Container } from "@cloudflare/containers";
 import { env, tracing, waitUntil } from "cloudflare:workers";
+import { createWorkersAI } from "workers-ai-provider";
 import { decodeWebDAVMethod, DOLTXStore, webdavApp } from "./lib/ltx-webdav";
-import { ai } from "./lib/ai";
+import { createAi } from "./lib/ai";
 import { Litestream } from "./lib/litestream";
 import {
   attributes,
@@ -34,73 +35,6 @@ export class Grafana extends Container implements GrafanaRPC {
   #live2live = new Map<WebSocket, WebSocket>();
 
   override async fetch(request: Request): Promise<Response> {
-    const url = new URL(request.url);
-
-    if (request.method === "GET" && url.pathname === "/api/live/ws") {
-      const container = this.ctx.container;
-      if (!container) {
-        console.error("Container is not available");
-        return new Response("Container is not available", { status: 500 });
-      }
-      if (!container.running) {
-        await super.start();
-      }
-      await super.waitForPort({
-        signal: request.signal,
-        portToCheck: this.defaultPort,
-        waitInterval: 1000,
-        retries: 60,
-      });
-      const resp = await this.ctx.container?.getTcpPort(this.defaultPort).fetch(
-        new Request(request.url.replace(/^https/, "http"), {
-          method: "GET",
-          headers: request.headers,
-        }),
-      );
-      if (!resp) {
-        console.error("Failed to connect to Grafana on port", this.defaultPort);
-        return new Response("Failed to connect to Grafana", { status: 500 });
-      }
-      const liveWs = resp.webSocket;
-      if (!liveWs) {
-        return resp;
-      }
-      liveWs.accept();
-      const { 0: client, 1: server } = new WebSocketPair();
-      this.ctx.acceptWebSocket(server, ["grafana-live"]);
-      this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("{}", ""));
-      this.#live2live.set(server, liveWs);
-
-      liveWs.addEventListener("message", (event) => {
-        if (typeof event.data === "string") {
-          if (event.data === "{}") {
-            liveWs.send("{}");
-            return;
-          }
-          const json = JSON.parse(event.data);
-          if (json.connect != null) {
-            server.send(
-              JSON.stringify({
-                ...json,
-                connect: {
-                  ...json.connect,
-                  ping: 120,
-                },
-              }),
-            );
-            return;
-          }
-        }
-        server.send(event.data);
-      });
-
-      if ((await this.listSchedules("ping")).length === 0) {
-        await this.schedule(120, "ping");
-      }
-
-      return new Response(null, { status: 101, webSocket: client, headers: resp.headers });
-    }
-
     return super.fetch(request);
   }
 
@@ -276,7 +210,6 @@ export class Grafana extends Container implements GrafanaRPC {
       const mackerelAPIKey = env.MACKEREL_APIKEY;
       tasks.push(
         tracing.enterSpan("export metrics", async (span) => {
-          console.log("Exporting metrics to Mackerel");
           span.setAttribute("export.target", "mackerel");
 
           const client = createClient(
@@ -310,6 +243,19 @@ export class Grafana extends Container implements GrafanaRPC {
 }
 
 const webdav = webdavApp(() => grafana().ltxStore());
+const workersAI = createWorkersAI({ binding: env.AI });
+const ai = createAi(
+  (modelId, { reasoningEffort }) => {
+    const enableThinking = reasoningEffort != null && reasoningEffort != "none";
+    return workersAI.chat(modelId, {
+      reasoning_effort: enableThinking ? reasoningEffort : null,
+      chat_template_kwargs: {
+        enable_thinking: enableThinking,
+      },
+    });
+  },
+  async () => (await env.AI.models({ task: "Text Generation" })).map((model) => model.name),
+);
 
 Grafana.outboundByHost = {
   "replica.worker": async (req, env) => {

@@ -24,8 +24,10 @@
     "@cloudflare/containers": "^0.3.7",
     "@connectrpc/connect": "^2.1.2",
     "@opentelemetry/semantic-conventions": "^1.43.0",
+    "ai": "^7.0.66",
     "fast-xml-parser": "^5.10.1",
     "hono": "^4.13.2",
+    "workers-ai-provider": "^4.0.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
