@@ -1,7 +1,6 @@
 import { env, RpcTarget } from "cloudflare:workers";
 import { XMLParser } from "fast-xml-parser";
 import { Hono } from "hono";
-import { cache } from "hono/cache";
 import type { Context } from "hono";
 import * as z from "zod";
 
@@ -9,7 +8,6 @@ export const webDAVMethodHeader = "X-Method";
 const txIDPattern = "[0-9a-f]".repeat(16);
 const ltxLevelPath = "/ltx/:level{[0-9]}" as const;
 const ltxFilePath = `/ltx/:level{[0-9]+}/:file{${txIDPattern}-${txIDPattern}\\.ltx}` as const;
-const ltxCacheName = "ltx";
 
 export function decodeWebDAVMethod(request: Request): Request {
   const encodedMethod = request.headers.get(webDAVMethodHeader);
@@ -80,12 +78,9 @@ export function webdavApp(doStore: () => Rpc.Stub<DOLTXStore> | Rpc.Result<DOLTX
 
   app.on("PROPFIND", ltxFilePath, (c) => c.body(null, 501));
 
-  app.on(["GET", "HEAD"],
+  app.on(
+    ["GET", "HEAD"],
     ltxFilePath,
-    cache({
-      cacheName: ltxCacheName,
-      cacheControl: "public, max-age=3600, immutable",
-    }),
     async (c) => {
       const resource = fileResource(c);
       const { level, minTXID, maxTXID } = resource;
