@@ -3,6 +3,7 @@
   "options": {
     "typeAware": true
   },
+  "ignorePatterns": ["dist"],
   "plugins": ["typescript", "unicorn", "oxc"],
   "categories": {
     "correctness": "error"
