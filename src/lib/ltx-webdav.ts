@@ -78,22 +78,18 @@ export function webdavApp(doStore: () => Rpc.Stub<DOLTXStore> | Rpc.Result<DOLTX
 
   app.on("PROPFIND", ltxFilePath, (c) => c.body(null, 501));
 
-  app.on(
-    ["GET", "HEAD"],
-    ltxFilePath,
-    async (c) => {
-      const resource = fileResource(c);
-      const { level, minTXID, maxTXID } = resource;
-      const resp = await store(level).getFile(level, minTXID, maxTXID);
-      if (c.req.method === "HEAD") {
-        return new Response(null, {
-          status: resp.status,
-          headers: resp.headers,
-        });
-      }
-      return resp;
-    },
-  );
+  app.on(["GET", "HEAD"], ltxFilePath, async (c) => {
+    const resource = fileResource(c);
+    const { level, minTXID, maxTXID } = resource;
+    const resp = await store(level).getFile(level, minTXID, maxTXID);
+    if (c.req.method === "HEAD") {
+      return new Response(null, {
+        status: resp.status,
+        headers: resp.headers,
+      });
+    }
+    return resp;
+  });
 
   app.put(ltxFilePath, async (c) => {
     const resource = fileResource(c);
@@ -238,7 +234,6 @@ export class DOLTXStore extends RpcTarget implements LTXFileStore {
       return new Response(null, { status: 404 });
     }
     const headers = new Headers();
-    headers.set("Content-Length", row.content_length.toString());
     headers.set("Content-Type", row.content_type);
     if (row.etag) {
       headers.set("ETag", `"${row.etag}"`);
@@ -250,7 +245,10 @@ export class DOLTXStore extends RpcTarget implements LTXFileStore {
     if (!object) {
       return new Response(null, { status: 404 });
     }
-    return new Response(object.body, { status: 200, headers });
+    return new Response(object.body.pipeThrough(new FixedLengthStream(object.size)), {
+      status: 200,
+      headers,
+    });
   }
 
   async listFiles(level: number): Promise<LTXFileMetadata[]> {
@@ -360,9 +358,11 @@ export class R2LTXStore implements LTXFileStore {
     }
     const headers = new Headers();
     object.writeHttpMetadata(headers);
-    headers.set("Content-Length", object.size.toString());
     headers.set("ETag", object.httpEtag);
-    return new Response(object.body, { status: 200, headers });
+    return new Response(object.body.pipeThrough(new FixedLengthStream(object.size)), {
+      status: 200,
+      headers,
+    });
   }
 
   async listFiles(level: number): Promise<LTXFileMetadata[]> {
