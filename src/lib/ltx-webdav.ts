@@ -294,9 +294,13 @@ export class DOLTXStore extends RpcTarget implements LTXFileStore {
     const etag = headers.get("ETag")?.replaceAll('"', "") ?? "";
     let body: ArrayBuffer | null = null;
     if (contentLength.data > 256 * 1024) {
-      await env.GRAFANA_LTX_BUCKET.put(objectKey(level, minTXID, maxTXID), bodyStream, {
-        httpMetadata: { contentType },
-      });
+      await env.GRAFANA_LTX_BUCKET.put(
+        objectKey(level, minTXID, maxTXID),
+        bodyStream.pipeThrough(new FixedLengthStream(contentLength.data)),
+        {
+          httpMetadata: { contentType },
+        },
+      );
     } else {
       body = await new Response(bodyStream).arrayBuffer();
     }
@@ -411,9 +415,13 @@ export class R2LTXStore implements LTXFileStore {
     const bucket = this.#bucket;
     const key = objectKey(level, minTXID, maxTXID);
     const old = await bucket.head(key);
-    const object = await bucket.put(key, body, {
-      httpMetadata: { contentType: headers.get("Content-Type") ?? "application/octet-stream" },
-    });
+    const object = await bucket.put(
+      key,
+      body.pipeThrough(new FixedLengthStream(contentLength.data)),
+      {
+        httpMetadata: { contentType: headers.get("Content-Type") ?? "application/octet-stream" },
+      },
+    );
     return new Response(null, {
       status: old ? 204 : 201,
       headers: {
