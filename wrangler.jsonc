@@ -3,6 +3,8 @@
   "name": "grafana",
   "main": "src/index.ts",
   "compatibility_date": "2026-06-16",
+  "minify": true,
+  "upload_source_maps": true,
   "cache": {
     "enabled": true,
   },

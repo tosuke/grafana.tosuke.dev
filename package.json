@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --env dev",
-    "deploy": "wrangler deploy",
+    "deploy": "WRANGLER_BUILD_CONDITIONS=workerd,worker,browser,module wrangler deploy",
     "test": "WRANGLER_WRITE_LOGS=false vitest",
     "generate": "run-p _generate:*",
     "_generate:wrangler": "wrangler types",
