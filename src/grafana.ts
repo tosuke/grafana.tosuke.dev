@@ -18,6 +18,7 @@ import {
 import { create } from "@bufbuild/protobuf";
 import { createClient } from "@connectrpc/connect";
 import { compressionGzip, createGrpcWebTransport } from "./lib/grpc";
+import { z } from "zod";
 
 interface GrafanaRPC extends Rpc.DurableObjectBranded {
   ltxStore(): DOLTXStore;
@@ -32,17 +33,23 @@ export class Grafana extends Container implements GrafanaRPC {
   defaultPort = 3000;
   sleepAfter = "5m";
   enableInternet = false;
-  #live2live = new Map<WebSocket, WebSocket>();
 
   override async fetch(request: Request): Promise<Response> {
-    return super.fetch(request);
+    const reqURL = new URL(request.url);
+    if (request.method === "GET" && reqURL.pathname === "/api/live/ws") {
+      return handleLiveRequest(this, this.ctx, request);
+    } else if (request.method === "GET" && reqURL.pathname === "/api/frontend/assets") {
+      return handleFrontendAssetsRequest(this, this.ctx, request);
+    } else {
+      return super.fetch(request);
+    }
   }
 
   async onStart() {
     console.log("Grafana started");
 
-    for (const ws of this.ctx.getWebSockets("grafana-live")) {
-      ws.close(1000, "Grafana restarted");
+    for (const ws of this.ctx.getWebSockets("fake-live")) {
+      ws.close(1000, "");
     }
 
     await this.scheduleScrapeMetrics();
@@ -53,49 +60,14 @@ export class Grafana extends Container implements GrafanaRPC {
     await this.stopScrapeMetrics();
   }
 
-  override async onActivityExpired() {
-    console.log("Grafana activity expired, closing live connections");
-    for (const ws of this.#live2live.values()) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close(1000, "Grafana activity expired");
-      }
-    }
-    await this.stop();
-  }
-
-  async ping() {
-    let hasLive = false;
-    for (const ws of this.ctx.getWebSockets("grafana-live")) {
-      if (ws.readyState === WebSocket.OPEN) {
-        hasLive = true;
-        ws.send("{}");
-      }
-    }
-    this.deleteSchedules("ping");
-    if (hasLive) {
-      await this.schedule(120, "ping");
+  async webSocketMessage(ws: WebSocket, rawMessage: string | ArrayBuffer): Promise<void> {
+    if (this.ctx.getTags(ws).includes(FAKE_LIVE_TAG)) {
+      await handleFakeLiveMessage(this, ws, rawMessage);
     }
   }
 
-  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
-    if (!this.ctx.getTags(ws).includes("grafana-live")) return;
-    const liveWs = this.#live2live.get(ws);
-    if (!liveWs || liveWs.readyState !== WebSocket.OPEN) {
-      console.error("Live WebSocket is not open for message:", message);
-      ws.close(1011, "Live WebSocket is not open");
-      return;
-    }
-    liveWs.send(message);
-  }
-
-  async webSocketClose(ws: WebSocket): Promise<void> {
-    if (this.ctx.getTags(ws).includes("grafana-live")) {
-      const liveWs = this.#live2live.get(ws);
-      this.#live2live.delete(ws);
-      if (liveWs && liveWs.readyState === WebSocket.OPEN) {
-        liveWs.close(1000, "Client disconnected");
-      }
-    }
+  async pingFakeLive() {
+    await handlePingFakeLive(this, this.ctx);
   }
 
   ltxStore() {
@@ -266,3 +238,202 @@ Grafana.outboundByHost = {
   "ai.worker": (req) => ai.fetch(req),
   "home-prometheus.worker": (req) => env.HOME_PROMETHEUS.fetch(req),
 };
+
+const FAKE_LIVE_PING_INTERVAL_SECONDS = 120;
+const FAKE_LIVE_TAG = "fake-live";
+
+const FakeLiveSocketSchema = z.object({
+  state: z.enum(["connecting", "connected", "ping-sent"]),
+});
+
+const LiveMessageSchema = z.union([
+  z.object({
+    id: z.number(),
+    connect: z.object({
+      name: z.string(),
+    }),
+  }),
+  z.object({
+    id: z.number(),
+    subscribe: z.object({
+      channel: z.string(),
+    }),
+  }),
+  z.object({
+    id: z.number(),
+    unsubscribe: z.object({}),
+  }),
+  z.object({}),
+]);
+
+interface FakeLiveContainer extends Container {
+  pingFakeLive(): Promise<void>;
+}
+
+async function handleLiveRequest(
+  container: FakeLiveContainer,
+  ctx: DurableObjectState,
+  request: Request,
+): Promise<Response> {
+  const state = await container.getState();
+  if (state.status === "healthy" || state.status === "running") {
+    const port = container.defaultPort ?? 3000;
+    await container.waitForPort({
+      portToCheck: port,
+      signal: request.signal,
+    });
+    return ctx.container?.getTcpPort(port).fetch(request) ?? new Response(null, { status: 503 });
+  } else {
+    if (
+      request.headers.get("Connection") !== "Upgrade" ||
+      request.headers.get("Upgrade") !== "websocket"
+    ) {
+      return new Response(null, { status: 404 });
+    }
+    const { 0: client, 1: server } = new WebSocketPair();
+    server.serializeAttachment({
+      state: "connecting",
+    });
+    ctx.acceptWebSocket(server, [FAKE_LIVE_TAG]);
+    if ((await container.listSchedules("pingFakeLive")).length === 0) {
+      await container.schedule(FAKE_LIVE_PING_INTERVAL_SECONDS, "pingFakeLive");
+    }
+    return new Response(null, {
+      status: 101,
+      webSocket: client,
+    });
+  }
+}
+
+async function handlePingFakeLive(container: FakeLiveContainer, ctx: DurableObjectState) {
+  try {
+    const wss = ctx.getWebSockets(FAKE_LIVE_TAG);
+    for (const ws of wss) {
+      const socketState = FakeLiveSocketSchema.parse(ws.deserializeAttachment());
+      switch (socketState.state) {
+        case "connecting":
+          break;
+        case "connected":
+          ws.send("{}");
+          ws.serializeAttachment({ ...socketState, state: "ping-sent" });
+          break;
+        case "ping-sent":
+          ws.close(1000, "");
+          break;
+        default:
+          const _exhaustiveCheck: never = socketState.state;
+          break;
+      }
+    }
+  } finally {
+    if (ctx.getWebSockets(FAKE_LIVE_TAG).length > 0) {
+      await container.schedule(FAKE_LIVE_PING_INTERVAL_SECONDS, "pingFakeLive");
+    }
+  }
+}
+
+async function handleFakeLiveMessage(
+  container: FakeLiveContainer,
+  ws: WebSocket,
+  rawMessage: string | ArrayBuffer,
+) {
+  if (typeof rawMessage !== "string") return;
+
+  const socketStateParsed = FakeLiveSocketSchema.safeParse(ws.deserializeAttachment());
+  if (!socketStateParsed.success) return;
+  let socketState = socketStateParsed.data;
+
+  let needContainer = false;
+  for (const msg of rawMessage.split("\n")) {
+    let json: unknown;
+    try {
+      json = JSON.parse(msg);
+    } catch {
+      json = {};
+    }
+
+    const messageParsed = LiveMessageSchema.safeParse(json);
+    if (messageParsed.success) {
+      const message = messageParsed.data;
+      if ("connect" in message) {
+        if (socketState.state === "connecting") {
+          ws.send(
+            JSON.stringify({
+              id: message.id,
+              connect: {
+                client: crypto.randomUUID(),
+                ping: 120,
+                pong: true,
+              },
+            }),
+          );
+          socketState.state = "connected";
+          continue;
+        }
+      } else if ("subscribe" in message) {
+        if (/^[^/]+\/grafana\/dashboard\/uid\/[^/]+$/.test(message.subscribe.channel)) {
+          ws.send(
+            JSON.stringify({
+              id: message.id,
+              subscribe: {},
+            }),
+          );
+          continue;
+        }
+      } else if ("unsubscribe" in message) {
+        ws.send(
+          JSON.stringify({
+            id: message.id,
+            unsubscribe: {},
+          }),
+        );
+        continue;
+      } else if (Object.keys(message).length === 0) /* {} */ {
+        if (socketState.state === "ping-sent") {
+          socketState.state = "connected";
+        }
+        continue;
+      }
+    }
+    needContainer = true;
+  }
+
+  ws.serializeAttachment(socketState);
+  if (needContainer) {
+    const state = await container.getState();
+    if (state.status !== "running") {
+      await container.startAndWaitForPorts();
+    }
+  }
+}
+
+// GET /api/frontend/assets
+const FrontendAssetsSchema = z.object({
+  version: z.string(),
+  content: z.unknown(),
+});
+
+async function handleFrontendAssetsRequest(
+  container: {
+    fetch: (request: Request) => Promise<Response>;
+  },
+  ctx: DurableObjectState,
+  request: Request,
+): Promise<Response> {
+  const assetsParsed = FrontendAssetsSchema.safeParse(ctx.storage.kv.get("frontend-assets"));
+  if (assetsParsed.success && assetsParsed.data.version === env.CF_VERSION_METADATA.id) {
+    return new Response(JSON.stringify(assetsParsed.data.content), {
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  }
+  const resp = await container.fetch(request);
+  if (resp.ok) {
+    ctx.storage.kv.put("frontend-assets", {
+      version: env.CF_VERSION_METADATA.id,
+      content: await resp.clone().json(),
+    });
+  }
+  return resp;
+}
