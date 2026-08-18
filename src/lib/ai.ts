@@ -236,6 +236,15 @@ function toOpenAIToolCalls(
   }));
 }
 
+function toReasoningContent(
+  content: ReadonlyArray<{ type: string; text?: string }>,
+): string | undefined {
+  const reasoningParts = content.filter((part) => part.type === "reasoning");
+  return reasoningParts.length > 0
+    ? reasoningParts.map((part) => part.text ?? "").join("")
+    : undefined;
+}
+
 export function createAi(
   createModel: LanguageModelFactory,
   listModels: ModelList = async () => [DEFAULT_AI_MODEL],
@@ -332,6 +341,22 @@ export function createAi(
                 choices: [{ index: 0, delta: { content: chunk.text }, finish_reason: null }],
               }),
             });
+          } else if (chunk.type === "reasoning-delta") {
+            await stream.writeSSE({
+              data: JSON.stringify({
+                id,
+                object: "chat.completion.chunk",
+                created,
+                model: modelId,
+                choices: [
+                  {
+                    index: 0,
+                    delta: { reasoning_content: chunk.text },
+                    finish_reason: null,
+                  },
+                ],
+              }),
+            });
           } else if (chunk.type === "tool-call") {
             const toolCalls = toOpenAIToolCalls([chunk]);
             const toolCall = toolCalls[0];
@@ -362,6 +387,7 @@ export function createAi(
             choices: [
               {
                 index: 0,
+                delta: {},
                 finish_reason: toOpenAIFinishReason(await completion.finishReason),
               },
             ],
@@ -374,6 +400,7 @@ export function createAi(
     try {
       const completion = await generateText(input);
       const toolCalls = toOpenAIToolCalls(completion.toolCalls);
+      const reasoningContent = toReasoningContent(completion.content);
       return c.json({
         id: `chatcmpl-${crypto.randomUUID()}`,
         object: "chat.completion",
@@ -385,6 +412,7 @@ export function createAi(
             message: {
               role: "assistant",
               content: toolCalls.length > 0 ? completion.text || null : completion.text,
+              ...(reasoningContent === undefined ? {} : { reasoning_content: reasoningContent }),
               ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
             },
             finish_reason: toOpenAIFinishReason(completion.finishReason),

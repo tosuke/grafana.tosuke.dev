@@ -77,6 +77,41 @@ describe("OpenAI-compatible chat completion API", () => {
     });
   });
 
+  it("includes reasoning content in a chat completion", async () => {
+    const model = new MockLanguageModelV4({
+      provider: "test",
+      modelId: DEFAULT_AI_MODEL,
+      doGenerate: {
+        content: [
+          { type: "reasoning", text: "The answer is straightforward. " },
+          { type: "text", text: "Hello from the language model" },
+        ],
+        finishReason: { unified: "stop", raw: undefined },
+        usage,
+        warnings: [],
+      },
+    });
+    const response = await createAi(() => model).fetch(
+      new Request("https://ai.worker/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "user", content: "Say hello" }] }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      choices: [
+        {
+          message: {
+            content: "Hello from the language model",
+            reasoning_content: "The answer is straightforward. ",
+          },
+        },
+      ],
+    });
+  });
+
   it("selects the requested model", async () => {
     const requestedModels: string[] = [];
     const response = await createAi((modelId) => {
@@ -288,6 +323,39 @@ describe("OpenAI-compatible chat completion API", () => {
     expect(JSON.parse(events.at(-2) ?? "{}")).toMatchObject({
       choices: [{ delta: {}, finish_reason: "stop" }],
     });
+  });
+
+  it("includes streamed reasoning content in OpenAI SSE chunks", async () => {
+    const model = new MockLanguageModelV4({
+      provider: "test",
+      modelId: DEFAULT_AI_MODEL,
+      doStream: {
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "reasoning-start", id: "reasoning-1" },
+            { type: "reasoning-delta", id: "reasoning-1", delta: "Think first" },
+            { type: "reasoning-end", id: "reasoning-1" },
+            { type: "text-start", id: "text-1" },
+            { type: "text-delta", id: "text-1", delta: "The answer" },
+            { type: "text-end", id: "text-1" },
+            { type: "finish", finishReason: { unified: "stop", raw: undefined }, usage },
+          ],
+        }),
+      },
+    });
+    const response = await createAi(() => model).fetch(
+      new Request("https://ai.worker/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [{ role: "user", content: "Think first" }],
+          stream: true,
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('"reasoning_content":"Think first"');
   });
 
   it("rejects malformed requests", async () => {
