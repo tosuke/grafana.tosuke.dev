@@ -282,7 +282,12 @@ async function handleLiveRequest(
       portToCheck: port,
       signal: request.signal,
     });
-    return ctx.container?.getTcpPort(port).fetch(request) ?? new Response(null, { status: 503 });
+    const url = new URL(request.url);
+    url.protocol = "http:";
+    return (
+      ctx.container?.getTcpPort(port).fetch(new Request(url, request)) ??
+      new Response(null, { status: 503 })
+    );
   } else {
     if (
       request.headers.get("Connection") !== "Upgrade" ||
