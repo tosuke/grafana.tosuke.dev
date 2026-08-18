@@ -39,7 +39,7 @@ export class Grafana extends Container implements GrafanaRPC {
     if (request.method === "GET" && reqURL.pathname === "/api/live/ws") {
       return handleLiveRequest(this, this.ctx, request);
     } else if (request.method === "GET" && reqURL.pathname === "/api/frontend/assets") {
-      return handleFrontendAssetsRequest(this, this.ctx, request);
+      return handleFrontendAssetsRequest((req) => super.fetch(req), this.ctx, request);
     } else {
       return super.fetch(request);
     }
@@ -414,9 +414,7 @@ const FrontendAssetsSchema = z.object({
 });
 
 async function handleFrontendAssetsRequest(
-  container: {
-    fetch: (request: Request) => Promise<Response>;
-  },
+  fetcher: (req: Request) => Promise<Response>,
   ctx: DurableObjectState,
   request: Request,
 ): Promise<Response> {
@@ -428,7 +426,7 @@ async function handleFrontendAssetsRequest(
       },
     });
   }
-  const resp = await container.fetch(request);
+  const resp = await fetcher(request);
   if (resp.ok) {
     ctx.storage.kv.put("frontend-assets", {
       version: env.CF_VERSION_METADATA.id,
