@@ -5,7 +5,7 @@ import { RpcTarget } from "cloudflare:workers";
 import { Hono } from "hono";
 import { html } from "hono/html";
 import type { Child } from "hono/jsx";
-import * as z from "zod";
+import * as z from "zod/mini";
 
 export function createLitestreamApp(getLitestream: () => Rpc.Result<Litestream>): Hono {
   const app = new Hono();
@@ -74,10 +74,10 @@ function formatUptime(seconds: number): string {
 
 const InfoResultSchema = z.object({
   version: z.string(),
-  pid: z.number().int().positive(),
-  uptime_seconds: z.number().int().nonnegative(),
+  pid: z.number().check(z.int(), z.positive()),
+  uptime_seconds: z.number().check(z.int(), z.nonnegative()),
   started_at: z.iso.datetime(),
-  database_count: z.number().int().nonnegative(),
+  database_count: z.number().check(z.int(), z.nonnegative()),
 });
 
 const ListResultSchema = z.object({
@@ -101,10 +101,10 @@ const StatusResultSchema = z.array(
 
 const LtxResultSchema = z.array(
   z.object({
-    level: z.number().int().min(0).max(9),
+    level: z.number().check(z.int(), z.gte(0), z.lte(9)),
     min_txid: z.string(),
     max_txid: z.string(),
-    size: z.number().int().nonnegative(),
+    size: z.number().check(z.int(), z.nonnegative()),
     timestamp: z.iso.datetime(),
   }),
 );

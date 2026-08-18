@@ -8,7 +8,32 @@
   "categories": {
     "correctness": "error"
   },
-  "rules": {},
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "zod",
+            "message": "Use `import * as z from \"zod/mini\"` instead."
+          }
+        ]
+      }
+    ],
+    "unicorn/import-style": [
+      "error",
+      {
+        "styles": {
+          "zod/mini": {
+            "default": false,
+            "named": false,
+            "namespace": true,
+            "unassigned": false
+          }
+        }
+      }
+    ]
+  },
   "env": {
     "builtin": true
   }

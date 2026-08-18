@@ -2,7 +2,7 @@ import { env, RpcTarget } from "cloudflare:workers";
 import { XMLParser } from "fast-xml-parser";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import * as z from "zod";
+import * as z from "zod/mini";
 
 export const webDAVMethodHeader = "X-Method";
 const txIDPattern = "[0-9a-f]".repeat(16);
@@ -284,8 +284,7 @@ export class DOLTXStore extends RpcTarget implements LTXFileStore {
   ): Promise<Response> {
     const contentLength = z.coerce
       .number()
-      .int()
-      .nonnegative()
+      .check(z.int(), z.nonnegative())
       .safeParse(headers.get("Content-Length"));
     if (!contentLength.success) {
       return new Response(null, { status: 411 });
@@ -406,8 +405,7 @@ export class R2LTXStore implements LTXFileStore {
   ): Promise<Response> {
     const contentLength = z.coerce
       .number()
-      .int()
-      .nonnegative()
+      .check(z.int(), z.nonnegative())
       .safeParse(headers.get("Content-Length"));
     if (!contentLength.success) {
       return new Response(null, { status: 411 });

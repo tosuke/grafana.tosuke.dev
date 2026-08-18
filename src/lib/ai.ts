@@ -11,7 +11,7 @@ import {
 } from "ai";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import { z } from "zod";
+import * as z from "zod/mini";
 
 export const DEFAULT_AI_MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8";
 
@@ -31,7 +31,7 @@ const imageContentPartSchema = z.object({
   type: z.literal("image_url"),
   image_url: z.object({
     url: z.string(),
-    detail: z.enum(["auto", "low", "high"]).optional(),
+    detail: z.optional(z.enum(["auto", "low", "high"])),
   }),
 });
 
@@ -46,21 +46,21 @@ const toolCallSchema = z.object({
 
 const messageSchema = z.object({
   role: z.enum(["system", "user", "assistant", "tool"]),
-  content: z
-    .union([z.string(), z.array(z.union([textContentPartSchema, imageContentPartSchema]))])
-    .nullable(),
-  name: z.string().optional(),
-  tool_call_id: z.string().optional(),
-  tool_calls: z.array(toolCallSchema).optional(),
+  content: z.nullable(
+    z.union([z.string(), z.array(z.union([textContentPartSchema, imageContentPartSchema]))]),
+  ),
+  name: z.optional(z.string()),
+  tool_call_id: z.optional(z.string()),
+  tool_calls: z.optional(z.array(toolCallSchema)),
 });
 
 const toolSchema = z.object({
   type: z.literal("function"),
   function: z.object({
     name: z.string(),
-    description: z.string().optional(),
-    parameters: z.record(z.string(), z.unknown()).optional(),
-    strict: z.boolean().optional(),
+    description: z.optional(z.string()),
+    parameters: z.optional(z.record(z.string(), z.unknown())),
+    strict: z.optional(z.boolean()),
   }),
 });
 
@@ -73,23 +73,20 @@ const toolChoiceSchema = z.union([
 ]);
 
 const chatCompletionRequestSchema = z.object({
-  model: z.string().optional(),
-  messages: z.array(messageSchema).min(1),
-  max_tokens: z.number().int().positive().optional(),
-  max_completion_tokens: z.number().int().positive().optional(),
-  temperature: z.number().min(0).optional(),
-  top_p: z.number().min(0).max(1).optional(),
-  stop: z
-    .union([z.string(), z.array(z.string()).min(1)])
-    .nullable()
-    .optional(),
-  presence_penalty: z.number().min(-2).max(2).optional(),
-  frequency_penalty: z.number().min(-2).max(2).optional(),
-  seed: z.number().int().optional(),
-  reasoning_effort: z.enum(["low", "medium", "high", "none"]).optional(),
-  tools: z.array(toolSchema).optional(),
-  tool_choice: toolChoiceSchema.optional(),
-  stream: z.boolean().optional(),
+  model: z.optional(z.string()),
+  messages: z.array(messageSchema).check(z.minLength(1)),
+  max_tokens: z.optional(z.number().check(z.int(), z.positive())),
+  max_completion_tokens: z.optional(z.number().check(z.int(), z.positive())),
+  temperature: z.optional(z.number().check(z.gte(0))),
+  top_p: z.optional(z.number().check(z.gte(0), z.lte(1))),
+  stop: z.optional(z.nullable(z.union([z.string(), z.array(z.string()).check(z.minLength(1))]))),
+  presence_penalty: z.optional(z.number().check(z.gte(-2), z.lte(2))),
+  frequency_penalty: z.optional(z.number().check(z.gte(-2), z.lte(2))),
+  seed: z.optional(z.number().check(z.int())),
+  reasoning_effort: z.optional(z.enum(["low", "medium", "high", "none"])),
+  tools: z.optional(z.array(toolSchema)),
+  tool_choice: z.optional(toolChoiceSchema),
+  stream: z.optional(z.boolean()),
 });
 
 type ChatCompletionRequest = z.infer<typeof chatCompletionRequestSchema>;

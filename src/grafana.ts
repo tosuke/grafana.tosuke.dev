@@ -18,7 +18,7 @@ import {
 import { create } from "@bufbuild/protobuf";
 import { createClient } from "@connectrpc/connect";
 import { compressionGzip, createGrpcWebTransport } from "./lib/grpc";
-import { z } from "zod";
+import * as z from "zod/mini";
 
 interface GrafanaRPC extends Rpc.DurableObjectBranded {
   ltxStore(): DOLTXStore;
