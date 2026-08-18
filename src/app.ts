@@ -1,17 +1,24 @@
 import { Hono } from "hono";
+import { cache } from "hono/cache";
 import { HTTPException } from "hono/http-exception";
 import { grafana } from "./grafana";
+import { authMiddleware } from "./lib/auth";
 import { createLitestreamApp } from "./lib/litestream";
 
 export const app = new Hono();
 
-const litestreamApp = createLitestreamApp(() => grafana().litestream());
+app.use(authMiddleware);
 
+const litestreamApp = createLitestreamApp(() => grafana().litestream());
 app.route("/_litestream", litestreamApp);
 
-app.all("*", async (c) => {
-  return grafana().fetch(c.req.raw);
-});
+app.all(
+  "*",
+  cache({
+    cacheName: "grafana-cache",
+  }),
+  (c) => grafana().fetch(c.req.raw),
+);
 
 app.onError(async (err) => {
   if (err instanceof HTTPException) {

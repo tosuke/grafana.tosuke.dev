@@ -6,7 +6,7 @@
     "module": "es2022",
     "moduleResolution": "bundler",
     "target": "esnext",
-    "lib": ["ES2025", "ESNext.Disposable"],
+    "lib": ["ES2025", "ESNext.Disposable", "ESNext.TypedArrays"],
 
     // Stricter Typechecking Options
     "noUncheckedIndexedAccess": true,

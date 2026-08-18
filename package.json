@@ -27,6 +27,7 @@
     "ai": "^7.0.66",
     "fast-xml-parser": "^5.10.1",
     "hono": "^4.13.2",
+    "jose": "^6.2.9",
     "workers-ai-provider": "^4.0.0",
     "zod": "^4.4.3"
   },

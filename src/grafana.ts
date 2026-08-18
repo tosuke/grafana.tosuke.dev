@@ -19,8 +19,9 @@ import { create } from "@bufbuild/protobuf";
 import { createClient } from "@connectrpc/connect";
 import { compressionGzip, createGrpcWebTransport } from "./lib/grpc";
 import * as z from "zod/mini";
+import { getJWKSet } from "./lib/auth";
 
-interface GrafanaRPC extends Rpc.DurableObjectBranded {
+export interface GrafanaRPC extends Rpc.DurableObjectBranded {
   ltxStore(): DOLTXStore;
   litestream(): Litestream;
 }
@@ -33,6 +34,10 @@ export class Grafana extends Container implements GrafanaRPC {
   defaultPort = 3000;
   sleepAfter = "5m";
   enableInternet = false;
+  interceptHttps = true;
+  envVars = {
+    SSL_CERT_FILE: "/etc/cloudflare/certs/cloudflare-containers-ca.crt",
+  };
 
   override async fetch(request: Request): Promise<Response> {
     const reqURL = new URL(request.url);
@@ -230,6 +235,17 @@ const ai = createAi(
 );
 
 Grafana.outboundByHost = {
+  "metadata.worker": async (req) => {
+    if (new URLPattern({ pathname: "/jwks.json" }).test(req.url)) {
+      const jwkSet = await getJWKSet();
+      return new Response(JSON.stringify(jwkSet.jwks()), {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    }
+    return new Response("Not Found", { status: 404 });
+  },
   "replica.worker": async (req, env) => {
     req = decodeWebDAVMethod(req);
     const response = await webdav.fetch(req, env);
@@ -354,7 +370,7 @@ async function handleFakeLiveMessage(
     try {
       json = JSON.parse(msg);
     } catch {
-      json = {};
+      json = null;
     }
 
     const messageParsed = LiveMessageSchema.safeParse(json);
@@ -400,6 +416,7 @@ async function handleFakeLiveMessage(
         continue;
       }
     }
+    console.warn("Unhandled message: ", msg);
     needContainer = true;
   }
 
