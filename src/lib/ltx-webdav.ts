@@ -23,7 +23,8 @@ export function webdavApp(doStore: () => Rpc.Stub<DOLTXStore> | Rpc.Result<DOLTX
   const app = new Hono();
 
   const r2Store = new R2LTXStore();
-  const store = (level: number): LTXFileStore => (level <= 1 ? doStore() : r2Store);
+  const getStore = (level: number): LTXFileStore & Disposable =>
+    maybeDisposable(level <= 1 ? doStore() : r2Store);
 
   app.on(
     "MKCOL",
@@ -57,7 +58,8 @@ export function webdavApp(doStore: () => Rpc.Stub<DOLTXStore> | Rpc.Result<DOLTX
 
     let files: readonly LTXFileMetadata[] = [];
     if (depth !== "0") {
-      files = await store(level).listFiles(level);
+      using store = getStore(level);
+      files = await store.listFiles(level);
     }
 
     const self = resourceToDAVResource(resource, files);
@@ -81,7 +83,8 @@ export function webdavApp(doStore: () => Rpc.Stub<DOLTXStore> | Rpc.Result<DOLTX
   app.on(["GET", "HEAD"], ltxFilePath, async (c) => {
     const resource = fileResource(c);
     const { level, minTXID, maxTXID } = resource;
-    const resp = await store(level).getFile(level, minTXID, maxTXID);
+    using store = getStore(level);
+    const resp = await store.getFile(level, minTXID, maxTXID);
     if (c.req.method === "HEAD") {
       return new Response(null, {
         status: resp.status,
@@ -96,13 +99,15 @@ export function webdavApp(doStore: () => Rpc.Stub<DOLTXStore> | Rpc.Result<DOLTX
     const { level, minTXID, maxTXID } = resource;
     const body = c.req.raw.body;
     if (!body) return c.body(null, 400);
-    return store(level).putFile(level, minTXID, maxTXID, c.req.raw.headers, body);
+    using store = getStore(level);
+    return store.putFile(level, minTXID, maxTXID, c.req.raw.headers, body);
   });
 
   app.delete(ltxFilePath, async (c) => {
     const resource = fileResource(c);
     const { level, minTXID, maxTXID } = resource;
-    await store(level).deleteFile(level, minTXID, maxTXID);
+    using store = getStore(level);
+    await store.deleteFile(level, minTXID, maxTXID);
     return c.body(null, 204);
   });
 
@@ -655,4 +660,15 @@ function formatETag(etag: string): string {
 
 function escapeXML(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+function maybeDisposable<T extends object>(value: T): T & Disposable {
+  const originalDispose = (value as Partial<Disposable>)[Symbol.dispose];
+  return Object.assign(value, {
+    [Symbol.dispose]() {
+      if (originalDispose) {
+        originalDispose.call(value);
+      }
+    },
+  });
 }
