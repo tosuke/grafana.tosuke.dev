@@ -233,7 +233,7 @@ importers:
         version: 5.11.0
       hono:
         specifier: ^4.13.2
-        version: 4.13.2
+        version: 4.13.3
       jose:
         specifier: ^6.2.9
         version: 6.2.9
@@ -1350,8 +1350,8 @@ packages:
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
 
-  hono@4.13.2:
-    resolution: {integrity: sha512-JydRilDRkYBQMt9qR9U92mXxmbGqsqSn/IKOrh4e7/gEbn+0zSr8igTu0obwJoNGN4sez28DIql7FBHWydoJpA==}
+  hono@4.13.3:
+    resolution: {integrity: sha512-r8AO2mYHoLxSHkgafNeC/BXyb2vWRxD3jem4Ts+ptav8oTG5FIRifAjuJEmZI4bSvvc2ns0GxmIYiZnHqN3mMw==}
     engines: {node: '>=16.9.0'}
 
   is-unsafe@2.0.0:
@@ -2477,7 +2477,7 @@ snapshots:
   fsevents@2.3.3:
     optional: true
 
-  hono@4.13.2: {}
+  hono@4.13.3: {}
 
   is-unsafe@2.0.0: {}
 
