@@ -20,6 +20,7 @@ import { createClient } from "@connectrpc/connect";
 import { compressionGzip, createGrpcWebTransport } from "./lib/grpc";
 import * as z from "zod/mini";
 import { getJWKSet } from "./lib/auth";
+import { createRendererApp } from "./lib/renderer";
 
 export interface GrafanaRPC extends Rpc.DurableObjectBranded {
   ltxStore(): DOLTXStore;
@@ -37,6 +38,12 @@ export class Grafana extends Container implements GrafanaRPC {
   interceptHttps = true;
   envVars = {
     SSL_CERT_FILE: "/etc/cloudflare/certs/cloudflare-containers-ca.crt",
+
+    // Renderer settings
+    GF_FEATURE_TOGGLES_reportRenderBinding: "true",
+    GF_RENDERING_SERVER_URL: "http://render.worker/render",
+    GF_RENDERING_CALLBACK_URL: "http://grafana",
+    GF_RENDERING_RENDERER_TOKEN: crypto.randomUUID(),
   };
 
   override async fetch(request: Request): Promise<Response> {
@@ -219,7 +226,28 @@ export class Grafana extends Container implements GrafanaRPC {
   }
 }
 
+Grafana.outboundByHost = {
+  "metadata.worker": async (req) => {
+    if (new URLPattern({ pathname: "/jwks.json" }).test(req.url)) {
+      const jwkSet = await getJWKSet();
+      return new Response(JSON.stringify(jwkSet.jwks()), {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    }
+    return new Response("Not Found", { status: 404 });
+  },
+  "home-prometheus.worker": (req) => env.HOME_PROMETHEUS.fetch(req),
+};
+
 const webdav = webdavApp(() => grafana().ltxStore());
+Grafana.outboundByHost["replica.worker"] = async (req, env) => {
+  req = decodeWebDAVMethod(req);
+  const response = await webdav.fetch(req, env);
+  return response;
+};
+
 const ai = createAi(
   (modelId, { reasoningEffort }) => {
     const workersAI = createWorkersAI({ binding: env.AI });
@@ -233,27 +261,10 @@ const ai = createAi(
   },
   async () => (await env.AI.models({ task: "Text Generation" })).map((model) => model.name),
 );
+Grafana.outboundByHost["ai.worker"] = (req) => ai.fetch(req);
 
-Grafana.outboundByHost = {
-  "metadata.worker": async (req) => {
-    if (new URLPattern({ pathname: "/jwks.json" }).test(req.url)) {
-      const jwkSet = await getJWKSet();
-      return new Response(JSON.stringify(jwkSet.jwks()), {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-    }
-    return new Response("Not Found", { status: 404 });
-  },
-  "replica.worker": async (req, env) => {
-    req = decodeWebDAVMethod(req);
-    const response = await webdav.fetch(req, env);
-    return response;
-  },
-  "ai.worker": (req) => ai.fetch(req),
-  "home-prometheus.worker": (req) => env.HOME_PROMETHEUS.fetch(req),
-};
+const rendererApp = createRendererApp((req) => grafana().fetch(req));
+Grafana.outboundByHost["render.worker"] = (req) => rendererApp.fetch(req);
 
 const FAKE_LIVE_PING_INTERVAL_SECONDS = 120;
 const FAKE_LIVE_TAG = "fake-live";

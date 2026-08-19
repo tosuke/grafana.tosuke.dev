@@ -2,7 +2,8 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "grafana",
   "main": "src/index.ts",
-  "compatibility_date": "2026-06-16",
+  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_date": "2026-08-17",
   "minify": true,
   "upload_source_maps": true,
   "observability": {
@@ -30,6 +31,9 @@
   },
   "ai": {
     "binding": "AI",
+  },
+  "browser": {
+    "binding": "BROWSER",
   },
   "r2_buckets": [
     {
@@ -81,6 +85,10 @@
       "ai": {
         "binding": "AI",
         "remote": true,
+      },
+      "browser": {
+        "binding": "BROWSER",
+        "remote": false,
       },
       "r2_buckets": [
         {

@@ -219,9 +219,15 @@ importers:
       '@cloudflare/containers':
         specifier: ^0.3.7
         version: 0.3.7
+      '@cloudflare/playwright':
+        specifier: ^1.3.5
+        version: 1.3.5
       '@connectrpc/connect':
         specifier: ^2.1.2
         version: 2.1.2(@bufbuild/protobuf@2.14.0)
+      '@hono/zod-validator':
+        specifier: ^0.9.0
+        version: 0.9.0(hono@4.13.2)(zod@4.4.3)
       '@opentelemetry/semantic-conventions':
         specifier: ^1.43.0
         version: 1.43.0
@@ -246,7 +252,10 @@ importers:
     devDependencies:
       '@cloudflare/vitest-pool-workers':
         specifier: ^0.21.0
-        version: 0.21.3(@vitest/runner@4.1.10)(@vitest/snapshot@4.1.10)(vitest@4.1.10(vite@8.2.0(esbuild@0.28.1)))
+        version: 0.21.3(@vitest/runner@4.1.10)(@vitest/snapshot@4.1.10)(vitest@4.1.10(@types/node@26.2.0)(vite@8.2.0(@types/node@26.2.0)(esbuild@0.28.1)))
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
       npm-run-all2:
         specifier: ^9.0.3
         version: 9.0.3
@@ -264,7 +273,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: ^4.1.10
-        version: 4.1.10(vite@8.2.0(esbuild@0.28.1))
+        version: 4.1.10(@types/node@26.2.0)(vite@8.2.0(@types/node@26.2.0)(esbuild@0.28.1))
       wrangler:
         specifier: 4.123.0
         version: 4.123.0
@@ -317,6 +326,14 @@ packages:
   '@cloudflare/kv-asset-handler@0.5.0':
     resolution: {integrity: sha512-jxQYkj8dSIzc0cD6cMMNdOc1UVjqSqu8BZdor5s8cGjW2I8BjODt/kWPVdY+u9zj3ms75Q5qaZgnxUad83+eAg==}
     engines: {node: '>=22.0.0'}
+
+  '@cloudflare/playwright@1.3.5':
+    resolution: {integrity: sha512-FJqX6bJxcJd+82WvVm315HfOAVh3Yg7AiuaDJrHx78UWPP3E28o6HHgvDVtTpKXUmtLHwqwkw706+pGw4pmWvA==}
+    peerDependencies:
+      playwright-core: '*'
+    peerDependenciesMeta:
+      playwright-core:
+        optional: true
 
   '@cloudflare/unenv-preset@2.16.1':
     resolution: {integrity: sha512-ECxObrMfyTl5bhQf/lZCXwo5G6xX9IAUo+nDMKK4SZ8m4Jvvxp52vilxyySSWh2YTZz8+HQ07qGH/2rEom1vDw==}
@@ -531,6 +548,12 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@hono/zod-validator@0.9.0':
+    resolution: {integrity: sha512-n0ZSXmCiHVIp4Y5wlOOyZCeTd/rsawA/qW1cipB8QOYKZ9N8Tk0nZUZCXho9cu374AN4JpDNKioNKBJ/W+LBug==}
+    peerDependencies:
+      hono: '>=4.11.2'
+      zod: ^3.25.0 || ^4.0.0
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -1109,6 +1132,9 @@ packages:
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
+  '@types/node@26.2.0':
+    resolution: {integrity: sha512-5IviulTZeRNp2vAJ514cc/HUlY5nZ9fCbq9DMyC52BrhFZACo3nI0R7qBxhQmo/d27NFe96ur/b7Wwxklda+kg==}
+
   '@typescript/typescript-aix-ppc64@7.0.2':
     resolution: {integrity: sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ==}
     engines: {node: '>=16.20.0'}
@@ -1618,6 +1644,9 @@ packages:
     engines: {node: '>=16.20.0'}
     hasBin: true
 
+  undici-types@8.3.0:
+    resolution: {integrity: sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ==}
+
   undici@7.29.0:
     resolution: {integrity: sha512-IDxfleLmmbSskfWSUATiN1nfn2rDuvnMOqb5CWR92iIfojA0Ud+ulOAAEQ57LPr9rWmsreUyf5lwyao+7GNNVw==}
     engines: {node: '>=20.18.1'}
@@ -1828,20 +1857,22 @@ snapshots:
 
   '@cloudflare/kv-asset-handler@0.5.0': {}
 
+  '@cloudflare/playwright@1.3.5': {}
+
   '@cloudflare/unenv-preset@2.16.1(unenv@2.0.0-rc.24)(workerd@1.20260811.1)':
     dependencies:
       unenv: 2.0.0-rc.24
     optionalDependencies:
       workerd: 1.20260811.1
 
-  '@cloudflare/vitest-pool-workers@0.21.3(@vitest/runner@4.1.10)(@vitest/snapshot@4.1.10)(vitest@4.1.10(vite@8.2.0(esbuild@0.28.1)))':
+  '@cloudflare/vitest-pool-workers@0.21.3(@vitest/runner@4.1.10)(@vitest/snapshot@4.1.10)(vitest@4.1.10(@types/node@26.2.0)(vite@8.2.0(@types/node@26.2.0)(esbuild@0.28.1)))':
     dependencies:
       '@vitest/runner': 4.1.10
       '@vitest/snapshot': 4.1.10
       cjs-module-lexer: 1.2.3
       esbuild: 0.28.1
       miniflare: 5.20260811.1-alpha
-      vitest: 4.1.10(vite@8.2.0(esbuild@0.28.1))
+      vitest: 4.1.10(@types/node@26.2.0)(vite@8.2.0(@types/node@26.2.0)(esbuild@0.28.1))
       wrangler: 4.123.0
       zod: 4.4.3
     transitivePeerDependencies:
@@ -1954,6 +1985,11 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.1':
     optional: true
+
+  '@hono/zod-validator@0.9.0(hono@4.13.2)(zod@4.4.3)':
+    dependencies:
+      hono: 4.13.2
+      zod: 4.4.3
 
   '@img/colour@1.1.0': {}
 
@@ -2279,6 +2315,10 @@ snapshots:
 
   '@types/estree@1.0.9': {}
 
+  '@types/node@26.2.0':
+    dependencies:
+      undici-types: 8.3.0
+
   '@typescript/typescript-aix-ppc64@7.0.2':
     optional: true
 
@@ -2350,13 +2390,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.1
 
-  '@vitest/mocker@4.1.10(vite@8.2.0(esbuild@0.28.1))':
+  '@vitest/mocker@4.1.10(vite@8.2.0(@types/node@26.2.0)(esbuild@0.28.1))':
     dependencies:
       '@vitest/spy': 4.1.10
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 8.2.0(esbuild@0.28.1)
+      vite: 8.2.0(@types/node@26.2.0)(esbuild@0.28.1)
 
   '@vitest/pretty-format@4.1.10':
     dependencies:
@@ -2773,13 +2813,15 @@ snapshots:
       '@typescript/typescript-win32-arm64': 7.0.2
       '@typescript/typescript-win32-x64': 7.0.2
 
+  undici-types@8.3.0: {}
+
   undici@7.29.0: {}
 
   unenv@2.0.0-rc.24:
     dependencies:
       pathe: 2.0.3
 
-  vite@8.2.0(esbuild@0.28.1):
+  vite@8.2.0(@types/node@26.2.0)(esbuild@0.28.1):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.5
@@ -2787,13 +2829,14 @@ snapshots:
       rolldown: 1.2.2
       tinyglobby: 0.2.17
     optionalDependencies:
+      '@types/node': 26.2.0
       esbuild: 0.28.1
       fsevents: 2.3.3
 
-  vitest@4.1.10(vite@8.2.0(esbuild@0.28.1)):
+  vitest@4.1.10(@types/node@26.2.0)(vite@8.2.0(@types/node@26.2.0)(esbuild@0.28.1)):
     dependencies:
       '@vitest/expect': 4.1.10
-      '@vitest/mocker': 4.1.10(vite@8.2.0(esbuild@0.28.1))
+      '@vitest/mocker': 4.1.10(vite@8.2.0(@types/node@26.2.0)(esbuild@0.28.1))
       '@vitest/pretty-format': 4.1.10
       '@vitest/runner': 4.1.10
       '@vitest/snapshot': 4.1.10
@@ -2810,8 +2853,10 @@ snapshots:
       tinyexec: 1.3.0
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.1
-      vite: 8.2.0(esbuild@0.28.1)
+      vite: 8.2.0(@types/node@26.2.0)(esbuild@0.28.1)
       why-is-node-running: 2.3.0
+    optionalDependencies:
+      '@types/node': 26.2.0
     transitivePeerDependencies:
       - msw
 
