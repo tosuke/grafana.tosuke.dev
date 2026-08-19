@@ -19,11 +19,12 @@ import { create } from "@bufbuild/protobuf";
 import { createClient } from "@connectrpc/connect";
 import { compressionGzip, createGrpcWebTransport } from "./lib/grpc";
 import * as z from "zod/mini";
-import { getJWKSet } from "./lib/auth";
 import { createRendererApp } from "./lib/renderer";
+import { DOJWKStore } from "./lib/jwk";
 
 export interface GrafanaRPC extends Rpc.DurableObjectBranded {
   ltxStore(): DOLTXStore;
+  jwkStore(): DOJWKStore;
   litestream(): Litestream;
 }
 
@@ -84,6 +85,10 @@ export class Grafana extends Container implements GrafanaRPC {
 
   ltxStore() {
     return new DOLTXStore(this.ctx);
+  }
+
+  jwkStore() {
+    return DOJWKStore.create(this.ctx);
   }
 
   litestream() {
@@ -228,11 +233,12 @@ export class Grafana extends Container implements GrafanaRPC {
 
 Grafana.outboundByHost = {
   "metadata.worker": async (req) => {
-    if (new URLPattern({ pathname: "/jwks.json" }).test(req.url)) {
-      const jwkSet = await getJWKSet();
-      return new Response(JSON.stringify(jwkSet.jwks()), {
+    if (new URLPattern({ pathname: "/jwks/v1.json" }).test(req.url)) {
+      using jwkSet = await grafana().jwkStore().getJWKSet();
+      return new Response(JSON.stringify(jwkSet), {
         headers: {
           "Content-Type": "application/json",
+          "Cache-Control": "public, max-age=3600",
         },
       });
     }
