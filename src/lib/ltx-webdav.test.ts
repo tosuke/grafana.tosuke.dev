@@ -66,13 +66,9 @@ describe("LTX WebDAV", () => {
   let stub: DurableObjectStub<Test>;
   let app: Hono;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     stub = env.TEST.get(env.TEST.newUniqueId());
-    const store = await stub.ltxStore;
-    app = webdavApp(() => store);
-    return () => {
-      store[Symbol.dispose]();
-    };
+    app = webdavApp(() => stub.ltxStore());
   });
 
   it.each([

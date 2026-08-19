@@ -112,7 +112,8 @@ export function webdavApp(doStore: () => Rpc.Stub<DOLTXStore> | Rpc.Result<DOLTX
   });
 
   app.delete("/ltx", async (c) => {
-    await Promise.all([doStore().deleteAll(), r2Store.deleteAll()]);
+    using store = maybeDisposable(doStore());
+    await Promise.all([store.deleteAll(), r2Store.deleteAll()]);
     return c.body(null, 204);
   });
 
