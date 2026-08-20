@@ -1,80 +1,156 @@
-# JWK Key Management
+# JWK Key Management Time Model
 
 ## Purpose
 
-The Grafana Durable Object owns the Ed25519 key used to sign the JWT that carries the Cloudflare
-Access identity to Grafana. Workers obtain the private key through RPC and sign tokens locally;
-Grafana obtains the corresponding public key from the Worker's JWKS endpoint.
+The Grafana Durable Object owns the JWT signing keyring. Workers obtain the current private key
+through RPC and sign Grafana authentication tokens locally, while Grafana obtains the public keys
+from the Worker's JWKS endpoint.
 
-This key is intentionally persistent. It is not rotated on a timer or by an alarm. The key is
-generated lazily on the first signing-key or JWKS request, stored in the Durable Object's SQLite
-database, and returned for all subsequent requests.
+Keys rotate lazily. There is no alarm or scheduled job: every signing-key or JWKS request first
+checks the keyring and performs any required initialization, cleanup, or rotation in a Durable
+Object storage transaction.
 
 ## Time parameters
 
-| Parameter              |      Value | Meaning                                                            |
-| ---------------------- | ---------: | ------------------------------------------------------------------ |
-| Grafana JWKS cache TTL | 15 minutes | How long Grafana may retain the fetched JWKS before refreshing it. |
-| JWT lifetime           | 15 minutes | The validity period of each JWT issued to Grafana.                 |
+| Parameter              |            Value | Meaning                                                                        |
+| ---------------------- | ---------------: | ------------------------------------------------------------------------------ |
+| Signing lifetime       |          3 hours | How long an activated key may be used to sign new JWTs.                        |
+| Grafana JWKS cache TTL |           1 hour | How long Grafana may retain a fetched JWKS without refreshing it.              |
+| JWT lifetime           |       15 minutes | The validity period of each JWT issued to Grafana.                             |
+| Clock skew allowance   |        5 minutes | Margin applied to publication and verification boundaries.                     |
+| Ready lead time        | 1 hour 5 minutes | `JWKS cache TTL + clock skew`; the minimum publication time before activation. |
+| Verification grace     |       20 minutes | `JWT lifetime + clock skew`; the time a retired key remains verifiable.        |
 
-The JWKS response also advertises a 15-minute `Cache-Control` max age. The key itself has no
-expiration time, so there is no signing-window or verification-grace timestamp to maintain.
+All timestamps stored in `jwk_keys` are Unix time in milliseconds.
 
-## Storage model
+## Keyring roles
 
-The version-2 schema has one row in `jwk_keys`:
+The singleton row in `jwk_keyring` refers to at most three keys:
 
-- `kid`: the random key identifier included in JWT headers and the public JWK;
-- `private_key_pkcs8`: the Ed25519 private key used by Workers for local signing;
-- `public_jwk`: the public key returned by the JWKS endpoint; and
-- `created_at`: the key-generation timestamp.
+- `previous`: no longer signs tokens, but remains published while tokens signed by it may still be
+  valid.
+- `current`: the only key returned for signing.
+- `next`: already published in JWKS, but not eligible for signing until `ready_at`.
 
-The `singleton = 1` constraint ensures that the table contains at most one key. The private key
-is returned only by `getSigningKey`; `getJWKSet` returns a JWKS containing only the public JWK.
-JWKS construction uses `jose` so the response has the standard JWKS shape.
+The JWKS response contains every referenced key whose `verify_until` is either unset or still in
+the future. It therefore normally contains two keys after initialization and three keys during the
+verification grace period following a rotation.
 
-Migration 2 removes the previous `jwk_keyring` and rotating `jwk_keys` schema before creating this
-single-key table. The endpoint is versioned as `/jwks/v2.json`, so Grafana does not reuse the
-previous endpoint's cached JWKS after deployment.
+Private key material is returned only for `current`. The JWKS endpoint exposes public JWKs only.
 
-## Initialization and requests
+## Per-key timestamps
 
-On the first request, the store checks `jwk_keys` inside an asynchronous Durable Object storage
-transaction. If the row is absent, it generates and inserts one key. Concurrent first requests
-are serialized by the transaction and observe the same key. Once the row exists, neither signing
-requests nor JWKS requests generate a replacement key.
+- `created_at`: when the key pair was generated.
+- `ready_at`: the earliest time at which a pre-published key may become `current`.
+- `activated_at`: when the key became `current`; unset for `next`.
+- `sign_until`: the exclusive end of the key's signing window; unset for `next`.
+- `verify_until`: the exclusive end of the key's JWKS publication window; unset for `next`.
 
-The Worker keeps the imported private `CryptoKey` in a single in-memory promise for up to 15
-minutes. It then reloads the key from the Durable Object. This short cache bounds how long an
-existing Worker isolate can continue using a key after a manual reset; a new isolate loads the
-same PKCS#8 key from the Durable Object immediately.
+`ready_at` is not a token claim and is not returned to Grafana. It is local keyring state that
+protects against activating a key before Grafana's cached JWKS has had enough time to refresh.
 
-JWTs continue to use a 15-minute expiration and include the key's `kid`. No `nbf` claim is needed:
-the key is valid immediately after initialization and remains valid until a manual reset.
+## Initialization
 
-## Manual reset
+On the first request at time `T0`, the store creates two keys:
 
-Deleting the row from `jwk_keys` is the key-reset operation. The next signing-key or JWKS request
-generates and stores a new key. Once Grafana refreshes JWKS, tokens signed with the old key can no
-longer be validated.
+```text
+current: activated_at = T0
+         sign_until  = T0 + 3h
+         verify_until = T0 + 3h + 20m
 
-Grafana may continue using its cached old JWKS for up to 15 minutes. Therefore a reset can cause
-authentication failures during that interval: Workers may sign with the new key while Grafana has
-not fetched it yet. Wait at least the configured 15-minute cache TTL after deleting the row before
-expecting all requests to work again. The `/jwks/v2.json` endpoint itself is also cacheable for
-15 minutes.
+next:    ready_at = T0 + 1h + 5m
+         activated_at, sign_until, verify_until = null
+```
 
-The reset should be performed deliberately from the Cloudflare dashboard or another authorized
-Durable Object SQL operation. It is not part of normal request handling.
+Both public keys are returned immediately in JWKS. The `next` key therefore has at least one full
+Grafana cache lifetime, plus clock-skew allowance, to reach Grafana before it can be activated.
 
-## Security and operations
+## Normal rotation
 
-The private key is confined to the Grafana Durable Object's SQLite storage and the Worker isolate
-that signs the authentication request. The JWKS endpoint exposes only the public key. Since this
-key authenticates requests to an internal Grafana path, the impact of key disclosure is limited by
-that network boundary, but disclosure would still allow JWT forgery for that path until the key is
-reset.
+Rotation occurs on the first request for which both conditions are true:
 
-Initialization is logged with the `kid` and creation time only; private key material is never
-logged. The key store is exposed as one `RpcTarget` adapter through `jwkStore()`, and RPC results
-that contain key material are disposed by the caller after the final pipelined RPC result.
+```text
+now >= current.sign_until
+now >= next.ready_at
+```
+
+The transaction then performs the following state change:
+
+```text
+previous <- current
+current  <- next
+next     <- newly generated key
+```
+
+At the rotation time `T1`:
+
+- the promoted key receives `activated_at = T1`;
+- its signing window becomes `[T1, T1 + 3h)`;
+- its publication window ends at `T1 + 3h + 20m`;
+- the newly generated `next` key receives `ready_at = T1 + 1h + 5m`; and
+- the keyring generation is incremented.
+
+The old `current` retains its existing `verify_until`. It remains in JWKS as `previous` until that
+time, covering every JWT it could have signed plus the clock-skew allowance.
+
+## Cleanup
+
+Before evaluating rotation, the store removes `previous` when:
+
+```text
+now >= previous.verify_until
+```
+
+The key is removed from both the keyring and `jwk_keys`. No token that is still within the modeled
+JWT lifetime and clock-skew allowance should require it after this boundary.
+
+## Timeline example
+
+For initialization at 00:00 and requests arriving exactly at the relevant boundaries:
+
+```text
+00:00  A becomes current; B is generated and published as next
+01:05  B is eligible for promotion, but A continues signing
+03:00  A's signing window ends; B becomes current; C is generated and published
+03:20  A's verification window ends and A may be removed
+04:05  C is eligible for promotion, but B continues signing
+06:00  B's signing window ends; C becomes current
+```
+
+The 3-hour signing lifetime is intentionally longer than the 1-hour-5-minute ready lead time, so
+under normal operation `next` is ready well before `current` expires.
+
+## Delayed requests and boundary conditions
+
+Lazy rotation means timestamps are based on the request that actually performs a transition, not
+on a periodic schedule. If no request arrives at 03:00 in the example above and the next request
+arrives at 04:30, rotation happens at 04:30 and the promoted key receives a fresh 3-hour signing
+window beginning then.
+
+If `current` has not expired, no rotation occurs even when `next` is already ready. Conversely, a
+key must never be promoted while `now < next.ready_at`, because Grafana may still have a cached JWKS
+that does not contain it.
+
+The state `current.sign_until <= now < next.ready_at` should not arise from the normal timing model:
+the ready lead time is 1 hour 5 minutes, while the signing lifetime is 3 hours. The current
+implementation preserves `current` and does not rotate if this invariant is violated. This is a
+defensive safety choice that avoids signing with an unpublished key; it should be treated as an
+abnormal state because the returned signing lease has already expired.
+
+## JWT claims
+
+Each JWT has a 15-minute expiration and identifies its signing key with `kid`. No `nbf` claim is
+required by this model: the token is valid immediately when issued, and key activation timing is
+enforced by the key store rather than encoded into individual tokens.
+
+The Worker caches the imported current private key only until `sign_until`. After that boundary it
+asks the Durable Object for a new signing lease, which also triggers lazy rotation when eligible.
+
+## Persistence and concurrency
+
+The key material and keyring pointers are stored in the Grafana Durable Object's SQLite storage in
+the `jwk_keys` and `jwk_keyring` tables. Initialization, cleanup, and rotation run in an asynchronous
+Durable Object storage transaction, so concurrent requests observe a single committed keyring
+transition. Rotation logs are emitted after the transaction commits and contain key identifiers and
+timestamps, never private key material.
+
