@@ -233,12 +233,12 @@ export class Grafana extends Container implements GrafanaRPC {
 
 Grafana.outboundByHost = {
   "metadata.worker": async (req) => {
-    if (new URLPattern({ pathname: "/jwks/v1.json" }).test(req.url)) {
+    if (new URLPattern({ pathname: "/jwks/v2.json" }).test(req.url)) {
       using jwkSet = await grafana().jwkStore().getJWKSet();
       return new Response(JSON.stringify(jwkSet), {
         headers: {
           "Content-Type": "application/json",
-          "Cache-Control": "public, max-age=3600",
+          "Cache-Control": "public, max-age=900",
         },
       });
     }

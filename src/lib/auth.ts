@@ -3,11 +3,12 @@ import * as jose from "jose";
 import { grafana } from "../grafana";
 
 const JWT_LIFETIME = "15m";
+const SIGNING_KEY_CACHE_TTL = 15 * 60 * 1000;
 
 interface SigningKey {
   kid: string;
   privateKey: CryptoKey;
-  signUntil: number;
+  loadedAt: number;
 }
 
 let signingKeyState: Promise<SigningKey> | null = null;
@@ -47,9 +48,8 @@ async function signingKey(): Promise<SigningKey> {
     if (state != null) {
       try {
         const key = await state;
-        if (Date.now() < key.signUntil) return key;
-        if (signingKeyState !== state) continue;
-        signingKeyState = null;
+        if (Date.now() - key.loadedAt < SIGNING_KEY_CACHE_TTL) return key;
+        if (signingKeyState === state) signingKeyState = null;
       } catch (error) {
         if (signingKeyState === state) signingKeyState = null;
         throw error;
@@ -79,6 +79,6 @@ async function loadSigningKey(): Promise<SigningKey> {
   return {
     kid: stored.kid,
     privateKey,
-    signUntil: stored.signUntil,
+    loadedAt: Date.now(),
   };
 }
