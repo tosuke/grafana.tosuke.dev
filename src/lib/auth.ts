@@ -1,16 +1,7 @@
+import { env } from "cloudflare:workers";
 import type { MiddlewareHandler } from "hono";
+import { createLocalJWKSet, exportJWK } from "jose";
 import * as jose from "jose";
-import { grafana } from "../grafana";
-
-const JWT_LIFETIME = "15m";
-
-interface SigningKey {
-  kid: string;
-  privateKey: CryptoKey;
-  signUntil: number;
-}
-
-let signingKeyState: Promise<SigningKey> | null = null;
 
 export const authMiddleware: MiddlewareHandler = async (c, next) => {
   const access = c.executionCtx.access;
@@ -26,13 +17,12 @@ export const authMiddleware: MiddlewareHandler = async (c, next) => {
     role: "GrafanaAdmin",
   } satisfies jose.JWTPayload;
 
-  const key = await signingKey();
   const jwt = await new jose.SignJWT(payload)
-    .setProtectedHeader({ alg: "EdDSA", kid: key.kid })
+    .setProtectedHeader({ alg: "EdDSA", kid: "1" })
     .setAudience(access.aud)
     .setIssuedAt()
-    .setExpirationTime(JWT_LIFETIME)
-    .sign(key.privateKey);
+    .setExpirationTime("1h")
+    .sign(await privateKey());
 
   const headers = new Headers(c.req.raw.headers);
   headers.set("X-JWT-Assertion", jwt);
@@ -41,44 +31,37 @@ export const authMiddleware: MiddlewareHandler = async (c, next) => {
   await next();
 };
 
-async function signingKey(): Promise<SigningKey> {
-  for (;;) {
-    const state = signingKeyState;
-    if (state != null) {
-      try {
-        const key = await state;
-        if (Date.now() < key.signUntil) return key;
-        if (signingKeyState !== state) continue;
-        signingKeyState = null;
-      } catch (error) {
-        if (signingKeyState === state) signingKeyState = null;
-        throw error;
-      }
-    }
-
-    const pending = loadSigningKey();
-    signingKeyState = pending;
-    try {
-      return await pending;
-    } catch (error) {
-      if (signingKeyState === pending) signingKeyState = null;
-      throw error;
-    }
-  }
+export async function getJWKSet() {
+  const pubKey = await publicKey();
+  return createLocalJWKSet({
+    keys: [
+      {
+        kid: "1",
+        ...(await exportJWK(pubKey)),
+      },
+    ],
+  });
 }
 
-async function loadSigningKey(): Promise<SigningKey> {
-  using stored = await grafana().jwkStore().getSigningKey();
-  const privateKey = await crypto.subtle.importKey(
-    "pkcs8",
-    stored.privateKeyPkcs8,
-    "Ed25519",
-    false,
-    ["sign"],
+let privateKeyCache: Promise<CryptoKey> | null = null;
+
+function privateKey(): Promise<CryptoKey> {
+  return (
+    privateKeyCache ??
+    (privateKeyCache = crypto.subtle.importKey(
+      "pkcs8",
+      Uint8Array.fromBase64(env.JWT_SIGN_KEY),
+      "Ed25519",
+      true,
+      ["sign"],
+    ))
   );
-  return {
-    kid: stored.kid,
-    privateKey,
-    signUntil: stored.signUntil,
-  };
+}
+
+async function publicKey() {
+  const privKey = await privateKey();
+  const jwk = (await crypto.subtle.exportKey("jwk", privKey)) as JsonWebKey;
+  const { d: _d, key_ops: _key_ops, ...publicJWK } = jwk;
+  const publicKey = await crypto.subtle.importKey("jwk", publicJWK, "Ed25519", true, ["verify"]);
+  return publicKey;
 }

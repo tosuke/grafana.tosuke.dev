@@ -27,7 +27,7 @@
     },
   },
   "secrets": {
-    "required": ["MACKEREL_APIKEY"],
+    "required": ["MACKEREL_APIKEY", "JWT_SIGN_KEY"],
   },
   "ai": {
     "binding": "AI",
@@ -80,7 +80,7 @@
         "ENV": "development",
       },
       "secrets": {
-        "required": ["MACKEREL_APIKEY", "__DO_NOT_DEPLOY"],
+        "required": ["MACKEREL_APIKEY", "JWT_SIGN_KEY", "__DO_NOT_DEPLOY"],
       },
       "ai": {
         "binding": "AI",
