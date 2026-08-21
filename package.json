@@ -42,7 +42,7 @@
     "oxlint-tsgolint": "^7.0.2001",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10",
-    "wrangler": "4.123.0"
+    "wrangler": "4.125.0"
   },
   "packageManager": "pnpm@11.22.0"
 }
