@@ -297,7 +297,7 @@ interface FakeLiveContainer extends Container {
   pingFakeLive(): Promise<void>;
 }
 
-async function handleLiveRequest(
+export async function handleLiveRequest(
   container: FakeLiveContainer,
   ctx: DurableObjectState,
   request: Request,
@@ -337,7 +337,7 @@ async function handleLiveRequest(
   }
 }
 
-async function handlePingFakeLive(container: FakeLiveContainer, ctx: DurableObjectState) {
+export async function handlePingFakeLive(container: FakeLiveContainer, ctx: DurableObjectState) {
   try {
     const wss = ctx.getWebSockets(FAKE_LIVE_TAG);
     for (const ws of wss) {
@@ -364,7 +364,7 @@ async function handlePingFakeLive(container: FakeLiveContainer, ctx: DurableObje
   }
 }
 
-async function handleFakeLiveMessage(
+export async function handleFakeLiveMessage(
   container: FakeLiveContainer,
   ws: WebSocket,
   rawMessage: string | ArrayBuffer,
@@ -446,7 +446,7 @@ const FrontendAssetsSchema = z.object({
   content: z.unknown(),
 });
 
-async function handleFrontendAssetsRequest(
+export async function handleFrontendAssetsRequest(
   fetcher: (req: Request) => Promise<Response>,
   ctx: DurableObjectState,
   request: Request,
