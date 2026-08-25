@@ -34,7 +34,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.21.0",
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@types/node": "^26.2.0",
     "npm-run-all2": "^9.0.3",
     "oxfmt": "^0.63.0",
@@ -42,7 +42,7 @@
     "oxlint-tsgolint": "^7.0.2001",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10",
-    "wrangler": "4.123.0"
+    "wrangler": "4.125.0"
   },
   "packageManager": "pnpm@11.22.0"
 }
