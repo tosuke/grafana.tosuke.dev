@@ -1,0 +1,16 @@
+{
+  "problemMatcher": [
+    {
+      "owner": "typescript",
+      "pattern": [
+        {
+          "regexp": "^(.+)\\((\\d+),(\\d+)\\): error (TS\\d+): (.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 5
+        }
+      ]
+    }
+  ]
+}
