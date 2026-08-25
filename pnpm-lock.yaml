@@ -242,7 +242,7 @@ importers:
         version: 4.13.3
       jose:
         specifier: ^6.2.9
-        version: 6.2.10
+        version: 6.2.9
       workers-ai-provider:
         specifier: ^4.0.0
         version: 4.0.0(@ai-sdk/openai@4.0.42(zod@4.4.3))(@ai-sdk/provider@4.0.7)(ai@7.0.66(zod@4.4.3))
@@ -1420,8 +1420,8 @@ packages:
     resolution: {integrity: sha512-FFUtZMpoZ8RqHS3XeXEmHWLA4thH+ZxCv2lOiPIn1Xc7CxrqhWzNSDzD+/chS/zbYezmiwWLdQC09JdQKmthOw==}
     engines: {node: '>=20'}
 
-  jose@6.2.10:
-    resolution: {integrity: sha512-iiW7J9qRFlGxvCOIBDBDxFePQSn7ZMAnrYGhrrOo6siO/MIqwfyilLR27pkfDgUk+raLuzADS8A3S/KLBisc0g==}
+  jose@6.2.9:
+    resolution: {integrity: sha512-XrchZOFZUl/T3vTwRe8XK+cJrGtMF4th1ARnDfwbBXFKThGhlsxEE4Zu03AD/bjJSt/9jT/mxrOCkJWOg77aPA==}
 
   json-parse-even-better-errors@6.0.0:
     resolution: {integrity: sha512-2/8adwnK1/+Fdjyts4r6wSpfANWw8zdNhU9U/Llk59c6O+DjSisPWPykwoL8gZmocP9Dy64S7oie2g+Mia123A==}
@@ -2595,7 +2595,7 @@ snapshots:
 
   isexe@4.0.0: {}
 
-  jose@6.2.10: {}
+  jose@6.2.9: {}
 
   json-parse-even-better-errors@6.0.0: {}
 
