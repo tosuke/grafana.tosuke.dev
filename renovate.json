@@ -6,8 +6,24 @@
   "labels": ["dependencies"],
   "packageRules": [
     {
+      "groupName": "Cloudflare Workers SDK",
+      "matchPackageNames": ["@cloudflare/vitest-pool-workers", "wrangler"]
+    },
+    {
+      "groupName": "Oxc lint tooling",
+      "matchPackageNames": ["oxlint", "oxlint-tsgolint"]
+    },
+    {
+      "groupName": "Buf-generated APIs",
+      "matchPackageNames": [
+        "@buf/opentelemetry_opentelemetry.bufbuild_es",
+        "@buf/prometheus_prometheus.bufbuild_es"
+      ]
+    },
+    {
       "matchDatasources": ["docker"],
-      "groupName": "container images"
+      "matchPackageNames": ["grafana/grafana"],
+      "groupName": "Grafana container images"
     }
   ]
 }
