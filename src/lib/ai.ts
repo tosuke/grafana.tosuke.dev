@@ -92,6 +92,7 @@ const chatCompletionRequestSchema = z.object({
 type ChatCompletionRequest = z.infer<typeof chatCompletionRequestSchema>;
 type ChatCompletionTool = z.infer<typeof toolSchema>;
 type ChatCompletionToolChoice = z.infer<typeof toolChoiceSchema>;
+type UrlFilePart = Omit<FilePart, "data"> & { data: URL };
 
 function parseToolArguments(argumentsText: string): unknown {
   try {
@@ -107,7 +108,7 @@ function imageMediaType(url: string): string {
 
 function toContent(
   content: ChatCompletionRequest["messages"][number]["content"],
-): string | Array<{ type: "text"; text: string } | FilePart> {
+): string | Array<{ type: "text"; text: string } | UrlFilePart> {
   if (content === null || typeof content === "string") return content ?? "";
 
   return content.map((part) => {
@@ -116,14 +117,14 @@ function toContent(
       type: "file",
       data: new URL(part.image_url.url),
       mediaType: imageMediaType(part.image_url.url),
-    } satisfies FilePart;
+    } satisfies UrlFilePart;
   });
 }
 
 function toText(content: ChatCompletionRequest["messages"][number]["content"]): string {
   const value = toContent(content);
   if (typeof value === "string") return value;
-  return value.map((part) => (part.type === "text" ? part.text : part.data.toString())).join("\n");
+  return value.map((part) => (part.type === "text" ? part.text : part.data.href)).join("\n");
 }
 
 function toModelMessages(messages: ChatCompletionRequest["messages"]): ModelMessage[] {

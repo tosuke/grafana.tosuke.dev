@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Test and lint
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - parallel:
+          - name: Set up pnpm and Node.js
+            uses: pnpm/setup@c9883cc79df532ad1a7b81bf9ab944ceb090d65c # v2.0.0
+            with:
+              version: 11.22.0
+              runtime: node@26
+              cache: true
+              cache-dependency-path: pnpm-lock.yaml
+
+          - name: Set up Go
+            uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+            with:
+              go-version-file: grafana/webdav-proxy/go.mod
+              cache-dependency-path: grafana/webdav-proxy/go.mod
+
+      - name: Register problem matchers
+        run: |
+          echo "::add-matcher::${{ github.workspace }}/.github/problem-matchers/typescript.json"
+          echo "::add-matcher::${{ github.workspace }}/.github/problem-matchers/go.json"
+
+      - parallel:
+          - name: Run Worker tests
+            run: pnpm ci:test
+
+          - name: Run CI lint
+            run: pnpm ci:lint
+
+          - name: Run WebDAV proxy tests
+            working-directory: grafana/webdav-proxy
+            run: go test ./...
