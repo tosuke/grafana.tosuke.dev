@@ -227,7 +227,7 @@ importers:
         version: 2.1.2(@bufbuild/protobuf@2.14.0)
       '@hono/zod-validator':
         specifier: ^0.9.0
-        version: 0.9.0(hono@4.13.2)(zod@4.4.3)
+        version: 0.9.0(hono@4.13.4)(zod@4.4.3)
       '@opentelemetry/semantic-conventions':
         specifier: ^1.43.0
         version: 1.43.0
@@ -239,7 +239,7 @@ importers:
         version: 5.11.0
       hono:
         specifier: ^4.13.2
-        version: 4.13.2
+        version: 4.13.4
       jose:
         specifier: ^6.2.9
         version: 6.2.9
@@ -1406,8 +1406,8 @@ packages:
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
 
-  hono@4.13.2:
-    resolution: {integrity: sha512-JydRilDRkYBQMt9qR9U92mXxmbGqsqSn/IKOrh4e7/gEbn+0zSr8igTu0obwJoNGN4sez28DIql7FBHWydoJpA==}
+  hono@4.13.4:
+    resolution: {integrity: sha512-AGEwKIyRMHRv1t8Wjwa3LHxQ61X5CqrdFT+4BRNTpqS5aJNnpl5WLjADb7vFlJzI/8uK7T5QLVApCMQKNa3LgQ==}
     engines: {node: '>=16.9.0'}
 
   is-unsafe@2.0.0:
@@ -2056,9 +2056,9 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@hono/zod-validator@0.9.0(hono@4.13.2)(zod@4.4.3)':
+  '@hono/zod-validator@0.9.0(hono@4.13.4)(zod@4.4.3)':
     dependencies:
-      hono: 4.13.2
+      hono: 4.13.4
       zod: 4.4.3
 
   '@img/colour@1.1.0': {}
@@ -2587,7 +2587,7 @@ snapshots:
   fsevents@2.3.3:
     optional: true
 
-  hono@4.13.2: {}
+  hono@4.13.4: {}
 
   is-unsafe@2.0.0: {}
 
