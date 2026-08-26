@@ -1,9 +1,15 @@
 package main
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"flag"
+	"fmt"
+	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -12,7 +18,9 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -29,83 +37,122 @@ var (
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	os.Exit(run(logger))
+	slog.SetDefault(logger)
+	os.Exit(run())
 }
 
-func run(logger *slog.Logger) int {
+func run() (status int) {
 	flag.Parse()
 	command := flag.Args()
 	if len(command) == 0 {
-		logger.Error("command is required")
+		slog.Error("command is required")
 		return 2
 	}
 	if *port < 1 || *port > 65535 {
-		logger.Error("invalid port", "port", *port)
+		slog.Error("invalid port", "port", *port)
 		return 2
 	}
 
 	target, err := url.Parse(*upstream)
 	if err != nil {
-		logger.Error("parse upstream URL", "error", err)
+		slog.Error("parse upstream URL", "error", err)
 		return 1
 	}
 	listenAddress := net.JoinHostPort(listenHost, strconv.Itoa(*port))
 	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
-		logger.Error("listen", "address", listenAddress, "error", err)
+		slog.Error("listen", "address", listenAddress, "error", err)
 		return 1
 	}
-
-	server := &http.Server{
-		Handler:           newWebDAVProxy(target, logger),
+	proxyServer := &http.Server{
+		Handler:           newWebDAVProxy(target),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	serverErr := make(chan error, 1)
+	proxyServerErr := make(chan error, 1)
 	go func() {
-		err := server.Serve(listener)
-		if !errors.Is(err, http.ErrServerClosed) {
-			serverErr <- err
+		if err := proxyServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			proxyServerErr <- err
+		}
+		close(proxyServerErr)
+	}()
+	defer func() {
+		if err := proxyServer.Close(); err != nil {
+			slog.Error("close WebDAV method proxy", "error", err)
 		}
 	}()
-	logger.Info("WebDAV method proxy listening", "address", listenAddress, "upstream", target)
+	slog.Info("WebDAV method proxy listening", "address", listenAddress, "upstream", target)
+
+	if err := restoreFromRemote(context.Background(), http.DefaultClient); err != nil && !errors.Is(err, os.ErrNotExist) {
+		slog.Error("restore from remote", "error", err)
+		return 1
+	}
 
 	child := exec.Command(command[0], command[1:]...)
 	child.Stdout = os.Stdout
 	child.Env = os.Environ()
 	if err := child.Start(); err != nil {
-		_ = server.Close()
-		logger.Error("start child", "command", command[0], "error", err)
+		slog.Error("start child", "command", command[0], "error", err)
 		return 1
 	}
-	logger.Info("child started", "command", command[0], "pid", child.Process.Pid)
+	defer func() {
+		if err := child.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			slog.Error("kill child", "command", command[0], "error", err)
+		}
+	}()
+	slog.Info("child started", "command", command[0], "pid", child.Process.Pid)
 
 	childDone := make(chan error, 1)
-	go func() { childDone <- child.Wait() }()
+	go func() { childDone <- child.Wait(); close(childDone) }()
 
-	signals := make(chan os.Signal, 2)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(signals)
-
-	for {
-		select {
-		case err := <-childDone:
-			shutdownServer(logger, server)
-			return exitCode(err)
-		case err := <-serverErr:
-			logger.Error("WebDAV method proxy stopped", "error", err)
-			_ = child.Process.Signal(syscall.SIGTERM)
-			<-childDone
-			return 1
-		case sig := <-signals:
-			logger.Info("forwarding signal", "signal", sig, "pid", child.Process.Pid)
-			if err := child.Process.Signal(sig); err != nil {
-				logger.Warn("forward signal", "error", err)
-			}
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	select {
+	case err := <-proxyServerErr:
+		slog.Error("WebDAV method proxy exited", "error", err)
+		return 1
+	case err := <-childDone:
+		slog.Error("child exited", "command", command[0], "error", err)
+		return exitCode(err)
+	case sig := <-sigChan:
+		slog.Info("forwarding signal", "signal", sig, "pid", child.Process.Pid)
+		if err := child.Process.Signal(sig); err != nil {
+			slog.Warn("forward signal", "error", err)
 		}
 	}
+
+	// Shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	select {
+	case err, ok := <-childDone:
+		if ok {
+			status = exitCode(err)
+		}
+	case <-ctx.Done():
+		slog.Warn("child did not exit in time, killing", "pid", child.Process.Pid)
+		if err := child.Process.Kill(); err != nil {
+			slog.Error("kill child", "error", err)
+		}
+	}
+
+	slog.Info("shutting down WebDAV method proxy")
+	if err := proxyServer.Shutdown(ctx); err != nil {
+		slog.Warn("shutdown WebDAV method proxy", "error", err)
+		if err := proxyServer.Close(); err != nil {
+			slog.Error("kill WebDAV method proxy", "error", err)
+		}
+	}
+
+	slog.Info("saving snapshot")
+	if err := saveSnapshot(ctx, http.DefaultClient); err != nil {
+		slog.Error("save snapshot", "error", err)
+	}
+
+	return status
 }
 
-func newWebDAVProxy(target *url.URL, logger *slog.Logger) http.Handler {
+func newWebDAVProxy(target *url.URL) http.Handler {
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(req *httputil.ProxyRequest) {
 			req.SetURL(target)
@@ -119,18 +166,10 @@ func newWebDAVProxy(target *url.URL, logger *slog.Logger) http.Handler {
 		},
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, err error) {
-		logger.Error("proxy request", "method", req.Method, "path", req.URL.Path, "error", err)
+		slog.Error("proxy request", "method", req.Method, "path", req.URL.Path, "error", err)
 		http.Error(w, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
 	}
 	return proxy
-}
-
-func shutdownServer(logger *slog.Logger, server *http.Server) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	if err := server.Shutdown(ctx); err != nil {
-		logger.Warn("shutdown WebDAV method proxy", "error", err)
-	}
 }
 
 func exitCode(err error) int {
@@ -141,4 +180,185 @@ func exitCode(err error) int {
 		return exitErr.ExitCode()
 	}
 	return 1
+}
+
+func restoreFromRemote(ctx context.Context, client *http.Client) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://metadata.worker/snapshot", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		if resp.StatusCode == http.StatusNotFound {
+			return os.ErrNotExist
+		}
+		return fmt.Errorf("unexpected response from metadata worker: %s", resp.Status)
+	}
+	if err := restoreFromReader(resp.Body); err != nil {
+		return err
+	}
+	go func() {
+		req, err := http.NewRequestWithContext(ctx, "DELETE", "http://metadata.worker/snapshot", nil)
+		if err != nil {
+			slog.ErrorContext(ctx, "create request to delete snapshot", "error", err)
+			return
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			slog.ErrorContext(ctx, "send request to delete snapshot", "error", err)
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode/100 != 2 {
+			slog.ErrorContext(ctx, "unexpected response from metadata worker when deleting snapshot", "status", resp.Status)
+			return
+		}
+	}()
+	return nil
+}
+
+func restoreFromReader(r io.Reader) error {
+	gr, err := gzip.NewReader(r)
+	if err != nil {
+		return err
+	}
+
+	tr := tar.NewReader(gr)
+	madeDir := make(map[string]bool)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+
+		info := hdr.FileInfo()
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if !madeDir[hdr.Name] {
+				if err := os.MkdirAll(hdr.Name, 0755); err != nil {
+					return err
+				}
+				madeDir[hdr.Name] = true
+			}
+		case tar.TypeReg:
+			dir := path.Dir(hdr.Name)
+			if !madeDir[dir] {
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					return err
+				}
+				madeDir[dir] = true
+			}
+
+			if err := func() error {
+				f, err := os.OpenFile(hdr.Name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+
+				n, err := io.Copy(f, tr)
+				if err != nil {
+					return err
+				}
+				if n != info.Size() {
+					return fmt.Errorf("unexpected number of bytes written for %s: got %d, want %d", hdr.Name, n, info.Size())
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		default:
+			return errors.New("unexpected file type in snapshot: " + hdr.Name)
+		}
+	}
+	return nil
+}
+
+func saveSnapshot(ctx context.Context, client *http.Client) error {
+	var body bytes.Buffer
+	gw := gzip.NewWriter(&body)
+	tw := tar.NewWriter(gw)
+
+	if err := writeLitestreamSnapshot(tw, "/var/lib/grafana/grafana.db"); err != nil {
+		return err
+	}
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	if err := gw.Close(); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "PUT", "http://metadata.worker/snapshot", &body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/gzip")
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("unexpected response from metadata worker: %s", resp.Status)
+	}
+	return nil
+}
+
+func writeLitestreamSnapshot(tw *tar.Writer, db string) error {
+	dir := path.Dir(db)
+	base := path.Base(db)
+	fsys := os.DirFS(dir)
+	return fs.WalkDir(fsys, ".", func(name string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if name == "." {
+			return nil
+		}
+		if name != base &&
+			name != base+"-wal" &&
+			name != base+"-shm" &&
+			!strings.HasPrefix(name, "."+base+"-litestream") {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		h, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			return err
+		}
+		h.Name = path.Join(dir, name)
+		if d.IsDir() {
+			h.Name += "/"
+		}
+		if err := tw.WriteHeader(h); err != nil {
+			return err
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		f, err := fsys.Open(name)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		if _, err := io.Copy(tw, f); err != nil {
+			return err
+		}
+		return nil
+	})
 }

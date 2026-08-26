@@ -10,6 +10,12 @@ import (
 	"testing"
 )
 
+func TestMain(m *testing.M) {
+	// Disable logging during tests
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	m.Run()
+}
+
 func TestWebDAVProxyTranslatesMethods(t *testing.T) {
 	t.Parallel()
 
@@ -54,7 +60,7 @@ func TestWebDAVProxyTranslatesMethods(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			proxy := httptest.NewServer(newWebDAVProxy(target, slog.New(slog.NewTextHandler(io.Discard, nil))))
+			proxy := httptest.NewServer(newWebDAVProxy(target))
 			defer proxy.Close()
 
 			req, err := http.NewRequest(tt.incomingMethod, proxy.URL+"/ltx/0/?page=2", strings.NewReader("request body"))

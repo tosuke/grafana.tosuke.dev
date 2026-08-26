@@ -227,14 +227,43 @@ export class Grafana extends Container implements GrafanaRPC {
 }
 
 Grafana.outboundByHost = {
-  "metadata.worker": async (req) => {
-    if (new URLPattern({ pathname: "/jwks.json" }).test(req.url)) {
+  "metadata.worker": async (req, env, ctx) => {
+    if (req.method === "GET" && new URLPattern({ pathname: "/jwks.json" }).test(req.url)) {
       const jwkSet = await getJWKSet();
       return new Response(JSON.stringify(jwkSet.jwks()), {
         headers: {
           "Content-Type": "application/json",
         },
       });
+    } else if (new URLPattern({ pathname: "/snapshot" }).test(req.url)) {
+      const key = `snapshots/${ctx.containerId}.tar.gz`;
+      switch (req.method) {
+        case "GET": {
+          const object = await env.GRAFANA_LTX_BUCKET.get(key);
+          if (!object) {
+            return new Response(null, { status: 404 });
+          }
+          const headers = new Headers();
+          object.writeHttpMetadata(headers);
+          return new Response(object.body, { headers });
+        }
+        case "PUT": {
+          const body = req.body;
+          if (!body) {
+            return new Response("Missing body", { status: 400 });
+          }
+          await env.GRAFANA_LTX_BUCKET.put(key, body, {
+            httpMetadata: req.headers,
+          });
+          return new Response(null, { status: 204 });
+        }
+        case "DELETE": {
+          await env.GRAFANA_LTX_BUCKET.delete(key);
+          return new Response(null, { status: 204 });
+        }
+        default:
+          return new Response("Method Not Allowed", { status: 405 });
+      }
     }
     return new Response("Not Found", { status: 404 });
   },
