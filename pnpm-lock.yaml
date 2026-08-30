@@ -227,13 +227,13 @@ importers:
         version: 2.1.2(@bufbuild/protobuf@2.14.0)
       '@hono/zod-validator':
         specifier: ^0.9.0
-        version: 0.9.0(hono@4.13.4)(zod@4.4.3)
+        version: 0.9.0(hono@4.13.4)(zod@4.5.2)
       '@opentelemetry/semantic-conventions':
         specifier: ^1.43.0
         version: 1.43.0
       ai:
         specifier: ^7.0.66
-        version: 7.0.79(zod@4.4.3)
+        version: 7.0.79(zod@4.5.2)
       fast-xml-parser:
         specifier: ^5.10.1
         version: 5.11.0
@@ -245,10 +245,10 @@ importers:
         version: 6.2.9
       workers-ai-provider:
         specifier: ^4.0.0
-        version: 4.0.0(@ai-sdk/openai@4.0.42(zod@4.4.3))(@ai-sdk/provider@4.0.8)(ai@7.0.79(zod@4.4.3))
+        version: 4.0.0(@ai-sdk/openai@4.0.42(zod@4.5.2))(@ai-sdk/provider@4.0.8)(ai@7.0.79(zod@4.5.2))
       zod:
         specifier: ^4.4.3
-        version: 4.4.3
+        version: 4.5.2
     devDependencies:
       '@cloudflare/vitest-pool-workers':
         specifier: ^0.22.0
@@ -1868,40 +1868,43 @@ packages:
   zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
+  zod@4.5.2:
+    resolution: {integrity: sha512-XkYXCol10+ba/6F/cueWV+TezUeOqXW0hdeJt5CdXjTYeAgAQg5N03RQdJ80mhfFE72+pblvYMW4wy2Qp4Qbrg==}
+
 snapshots:
 
-  '@ai-sdk/gateway@4.0.64(zod@4.4.3)':
+  '@ai-sdk/gateway@4.0.64(zod@4.5.2)':
     dependencies:
       '@ai-sdk/provider': 4.0.8
-      '@ai-sdk/provider-utils': 5.0.30(zod@4.4.3)
+      '@ai-sdk/provider-utils': 5.0.30(zod@4.5.2)
       '@vercel/oidc': 3.2.0
-      zod: 4.4.3
+      zod: 4.5.2
 
-  '@ai-sdk/openai@4.0.42(zod@4.4.3)':
+  '@ai-sdk/openai@4.0.42(zod@4.5.2)':
     dependencies:
       '@ai-sdk/provider': 4.0.7
-      '@ai-sdk/provider-utils': 5.0.27(zod@4.4.3)
-      zod: 4.4.3
+      '@ai-sdk/provider-utils': 5.0.27(zod@4.5.2)
+      zod: 4.5.2
     optional: true
 
-  '@ai-sdk/provider-utils@5.0.27(zod@4.4.3)':
+  '@ai-sdk/provider-utils@5.0.27(zod@4.5.2)':
     dependencies:
       '@ai-sdk/provider': 4.0.7
       '@standard-schema/spec': 1.1.0
       '@workflow/serde': 4.1.0
       eventsource-parser: 3.1.1
       undici: 7.29.0
-      zod: 4.4.3
+      zod: 4.5.2
     optional: true
 
-  '@ai-sdk/provider-utils@5.0.30(zod@4.4.3)':
+  '@ai-sdk/provider-utils@5.0.30(zod@4.5.2)':
     dependencies:
       '@ai-sdk/provider': 4.0.8
       '@standard-schema/spec': 1.1.0
       '@workflow/serde': 4.1.0
       eventsource-parser: 3.1.1
       undici: 7.29.0
-      zod: 4.4.3
+      zod: 4.5.2
 
   '@ai-sdk/provider@4.0.7':
     dependencies:
@@ -2081,10 +2084,10 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@hono/zod-validator@0.9.0(hono@4.13.4)(zod@4.4.3)':
+  '@hono/zod-validator@0.9.0(hono@4.13.4)(zod@4.5.2)':
     dependencies:
       hono: 4.13.4
-      zod: 4.4.3
+      zod: 4.5.2
 
   '@img/colour@1.1.0': {}
 
@@ -2519,12 +2522,12 @@ snapshots:
 
   '@workflow/serde@4.1.0': {}
 
-  ai@7.0.79(zod@4.4.3):
+  ai@7.0.79(zod@4.5.2):
     dependencies:
-      '@ai-sdk/gateway': 4.0.64(zod@4.4.3)
+      '@ai-sdk/gateway': 4.0.64(zod@4.5.2)
       '@ai-sdk/provider': 4.0.8
-      '@ai-sdk/provider-utils': 5.0.30(zod@4.4.3)
-      zod: 4.4.3
+      '@ai-sdk/provider-utils': 5.0.30(zod@4.5.2)
+      zod: 4.5.2
 
   ansi-styles@7.0.0: {}
 
@@ -2996,12 +2999,12 @@ snapshots:
       '@cloudflare/workerd-linux-arm64': 1.20260820.1
       '@cloudflare/workerd-windows-64': 1.20260820.1
 
-  workers-ai-provider@4.0.0(@ai-sdk/openai@4.0.42(zod@4.4.3))(@ai-sdk/provider@4.0.8)(ai@7.0.79(zod@4.4.3)):
+  workers-ai-provider@4.0.0(@ai-sdk/openai@4.0.42(zod@4.5.2))(@ai-sdk/provider@4.0.8)(ai@7.0.79(zod@4.5.2)):
     dependencies:
       '@ai-sdk/provider': 4.0.8
-      ai: 7.0.79(zod@4.4.3)
+      ai: 7.0.79(zod@4.5.2)
     optionalDependencies:
-      '@ai-sdk/openai': 4.0.42(zod@4.4.3)
+      '@ai-sdk/openai': 4.0.42(zod@4.5.2)
 
   wrangler@4.124.0:
     dependencies:
@@ -3053,3 +3056,5 @@ snapshots:
       youch-core: 0.3.3
 
   zod@4.4.3: {}
+
+  zod@4.5.2: {}
