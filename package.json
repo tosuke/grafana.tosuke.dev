@@ -33,6 +33,7 @@
     "@opentelemetry/semantic-conventions": "^1.43.0",
     "ai": "^7.0.66",
     "fast-xml-parser": "^5.10.1",
+    "fast-xml-validator": "^1.4.2",
     "hono": "^4.13.2",
     "jose": "^6.2.9",
     "workers-ai-provider": "^4.0.0",
@@ -41,6 +42,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",
     "@types/node": "^26.2.0",
+    "aws4fetch": "^1.0.20",
     "npm-run-all2": "^9.0.3",
     "oxfmt": "^0.65.0",
     "oxlint": "^1.78.0",
