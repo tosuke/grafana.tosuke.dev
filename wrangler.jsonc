@@ -2,7 +2,6 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "grafana",
   "main": "src/index.ts",
-  "compatibility_flags": ["nodejs_compat"],
   "compatibility_date": "2026-08-17",
   "minify": true,
   "upload_source_maps": true,
@@ -15,16 +14,6 @@
   },
   "vars": {
     "ENV": "production",
-  },
-  "access": {
-    "dev": {
-      "aud": "local-grafana",
-      "identity": {
-        "email": "admin@localhost",
-        "name": "Local Admin",
-        "user_uuid": "local-admin",
-      },
-    },
   },
   "secrets": {
     "required": ["MACKEREL_APIKEY", "JWT_SIGN_KEY"],
@@ -76,6 +65,16 @@
   },
   "env": {
     "dev": {
+      "access": {
+        "dev": {
+          "aud": "local-grafana",
+          "identity": {
+            "email": "admin@localhost",
+            "name": "Local Admin",
+            "user_uuid": "local-admin",
+          },
+        },
+      },
       "vars": {
         "ENV": "development",
       },

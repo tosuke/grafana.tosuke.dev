@@ -2,8 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "grafana",
   "main": "src/index.stub.ts",
-  "compatibility_date": "2026-06-16",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_date": "2026-08-17",
   "vars": {
     "ENV": "dev",
   },
