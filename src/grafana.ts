@@ -39,6 +39,10 @@ export class Grafana extends Container implements GrafanaRPC {
   envVars = {
     SSL_CERT_FILE: "/etc/cloudflare/certs/cloudflare-containers-ca.crt",
 
+    GF_PLUGINS_PREINSTALL_DISABLED: "true",
+    GF_ANALYTICS_CHECK_FOR_UPDATES: "false",
+    GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false",
+
     // Renderer settings
     GF_FEATURE_TOGGLES_reportRenderBinding: "true",
     GF_RENDERING_SERVER_URL: "http://render.worker/render",
@@ -87,12 +91,7 @@ export class Grafana extends Container implements GrafanaRPC {
   }
 
   litestream() {
-    return Litestream.create(
-      this.ctx,
-      "/usr/local/bin/litestream",
-      "/tmp/litestream.sock",
-      "/etc/litestream.yaml",
-    );
+    return Litestream.create(this.ctx, "/usr/local/bin/litestream", "/tmp/litestream.sock");
   }
 
   async scheduleScrapeMetrics() {
@@ -227,14 +226,43 @@ export class Grafana extends Container implements GrafanaRPC {
 }
 
 Grafana.outboundByHost = {
-  "metadata.worker": async (req) => {
-    if (new URLPattern({ pathname: "/jwks.json" }).test(req.url)) {
+  "metadata.worker": async (req, env, ctx) => {
+    if (req.method === "GET" && new URLPattern({ pathname: "/jwks.json" }).test(req.url)) {
       const jwkSet = await getJWKSet();
       return new Response(JSON.stringify(jwkSet.jwks()), {
         headers: {
           "Content-Type": "application/json",
         },
       });
+    } else if (new URLPattern({ pathname: "/snapshot" }).test(req.url)) {
+      const key = `snapshots/${ctx.containerId}.tar.gz`;
+      switch (req.method) {
+        case "GET": {
+          const object = await env.GRAFANA_LTX_BUCKET.get(key);
+          if (!object) {
+            return new Response(null, { status: 404 });
+          }
+          const headers = new Headers();
+          object.writeHttpMetadata(headers);
+          return new Response(object.body, { headers });
+        }
+        case "PUT": {
+          const body = req.body;
+          if (!body) {
+            return new Response("Missing body", { status: 400 });
+          }
+          await env.GRAFANA_LTX_BUCKET.put(key, body, {
+            httpMetadata: req.headers,
+          });
+          return new Response(null, { status: 204 });
+        }
+        case "DELETE": {
+          await env.GRAFANA_LTX_BUCKET.delete(key);
+          return new Response(null, { status: 204 });
+        }
+        default:
+          return new Response("Method Not Allowed", { status: 405 });
+      }
     }
     return new Response("Not Found", { status: 404 });
   },
