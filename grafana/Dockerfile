@@ -20,9 +20,9 @@ COPY --from=litestream /usr/local/bin/litestream /usr/local/bin/litestream
 COPY --from=webdav-proxy /webdav-proxy /usr/local/bin/webdav-proxy
 COPY --from=grafana-plugin-installer --chown=472:0 /var/lib/grafana/plugins /var/lib/grafana/plugins
 COPY grafana.ini /etc/grafana/grafana.ini
-COPY litestream.yaml /etc/litestream.yaml
+COPY litestream.yml /etc/litestream.yml
 COPY provisioning /etc/grafana/provisioning
 
 EXPOSE 3000
 ENTRYPOINT ["/usr/local/bin/webdav-proxy"]
-CMD ["/usr/local/bin/litestream", "replicate", "-config", "/etc/litestream.yaml", "-exec", "/usr/share/grafana/bin/grafana server --homepath=/usr/share/grafana --config=/etc/grafana/grafana.ini --packaging=docker"]
+CMD ["/usr/share/grafana/bin/grafana", "server", "--homepath=/usr/share/grafana", "--config=/etc/grafana/grafana.ini", "--packaging=docker"]

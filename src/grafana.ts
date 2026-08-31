@@ -39,6 +39,10 @@ export class Grafana extends Container implements GrafanaRPC {
   envVars = {
     SSL_CERT_FILE: "/etc/cloudflare/certs/cloudflare-containers-ca.crt",
 
+    GF_PLUGINS_PREINSTALL_DISABLED: "true",
+    GF_ANALYTICS_CHECK_FOR_UPDATES: "false",
+    GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false",
+
     // Renderer settings
     GF_FEATURE_TOGGLES_reportRenderBinding: "true",
     GF_RENDERING_SERVER_URL: "http://render.worker/render",
@@ -87,12 +91,7 @@ export class Grafana extends Container implements GrafanaRPC {
   }
 
   litestream() {
-    return Litestream.create(
-      this.ctx,
-      "/usr/local/bin/litestream",
-      "/tmp/litestream.sock",
-      "/etc/litestream.yaml",
-    );
+    return Litestream.create(this.ctx, "/usr/local/bin/litestream", "/tmp/litestream.sock");
   }
 
   async scheduleScrapeMetrics() {

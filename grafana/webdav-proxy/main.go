@@ -28,11 +28,15 @@ import (
 const (
 	listenHost      = "127.0.0.1"
 	webDAVMethodKey = "X-Method"
+	grafanaDBPath   = "/var/lib/grafana/grafana.db"
 )
 
 var (
-	port     = flag.Int("port", 8080, "port to listen on")
-	upstream = flag.String("upstream", "http://replica.worker", "upstream URL")
+	port             = flag.Int("port", 8080, "port to listen on")
+	upstream         = flag.String("upstream", "http://replica.worker", "upstream URL")
+	replicationDelay = flag.Duration("replication-delay", 10*time.Second, "delay before starting Litestream replication")
+	litestreamBin    = flag.String("litestream-bin", "/usr/local/bin/litestream", "Litestream binary")
+	litestreamConfig = flag.String("litestream-config", "/etc/litestream.yml", "Litestream configuration file")
 )
 
 func main() {
@@ -64,92 +68,73 @@ func run() (status int) {
 		slog.Error("listen", "address", listenAddress, "error", err)
 		return 1
 	}
+	defer listener.Close()
 	proxyServer := &http.Server{
 		Handler:           newWebDAVProxy(target),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	proxyServerErr := make(chan error, 1)
-	go func() {
-		if err := proxyServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			proxyServerErr <- err
-		}
-		close(proxyServerErr)
-	}()
-	defer func() {
-		if err := proxyServer.Close(); err != nil {
-			slog.Error("close WebDAV method proxy", "error", err)
-		}
-	}()
-	slog.Info("WebDAV method proxy listening", "address", listenAddress, "upstream", target)
+	proxy := &webDAVTask{server: proxyServer, listener: listener}
 
-	if err := restoreFromRemote(context.Background(), http.DefaultClient); err != nil && !errors.Is(err, os.ErrNotExist) {
-		slog.Error("restore from remote", "error", err)
-		return 1
+	primary := newProcessTask(command)
+	primary.beforeStart = func() error {
+		if err := restoreFromRemote(context.Background(), http.DefaultClient); err != nil && !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("restore from remote snapshot", "error", err)
+		}
+		restored, err := restoreDatabaseIfMissing(grafanaDBPath, *litestreamBin, *litestreamConfig, func(name string, args ...string) error {
+			cmd := exec.Command(name, args...)
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			cmd.Env = os.Environ()
+			return cmd.Run()
+		})
+		if err != nil {
+			return err
+		}
+		if restored {
+			slog.Info("Litestream restore completed", "database", grafanaDBPath)
+		}
+		return nil
 	}
-
-	child := exec.Command(command[0], command[1:]...)
-	child.Stdout = os.Stdout
-	child.Env = os.Environ()
-	if err := child.Start(); err != nil {
-		slog.Error("start child", "command", command[0], "error", err)
-		return 1
-	}
-	defer func() {
-		if err := child.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
-			slog.Error("kill child", "command", command[0], "error", err)
-		}
-	}()
-	slog.Info("child started", "command", command[0], "pid", child.Process.Pid)
-
-	childDone := make(chan error, 1)
-	go func() { childDone <- child.Wait(); close(childDone) }()
+	replication := newDelayedProcessTask([]string{*litestreamBin, "replicate", "-config", *litestreamConfig}, *replicationDelay)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	select {
-	case err := <-proxyServerErr:
-		slog.Error("WebDAV method proxy exited", "error", err)
-		return 1
-	case err := <-childDone:
-		slog.Error("child exited", "command", command[0], "error", err)
-		return exitCode(err)
-	case sig := <-sigChan:
-		slog.Info("forwarding signal", "signal", sig, "pid", child.Process.Pid)
-		if err := child.Process.Signal(sig); err != nil {
-			slog.Warn("forward signal", "error", err)
-		}
-	}
+	defer signal.Stop(sigChan)
 
-	// Shutdown
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
+	status, save := superviseTasks([]task{proxy, primary, replication}, sigChan)
+	if save {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
 
-	select {
-	case err, ok := <-childDone:
-		if ok {
-			status = exitCode(err)
+		slog.Info("saving snapshot")
+		if err := saveSnapshot(ctx, http.DefaultClient); err != nil {
+			slog.Error("save snapshot", "error", err)
 		}
-	case <-ctx.Done():
-		slog.Warn("child did not exit in time, killing", "pid", child.Process.Pid)
-		if err := child.Process.Kill(); err != nil {
-			slog.Error("kill child", "error", err)
-		}
-	}
-
-	slog.Info("shutting down WebDAV method proxy")
-	if err := proxyServer.Shutdown(ctx); err != nil {
-		slog.Warn("shutdown WebDAV method proxy", "error", err)
-		if err := proxyServer.Close(); err != nil {
-			slog.Error("kill WebDAV method proxy", "error", err)
-		}
-	}
-
-	slog.Info("saving snapshot")
-	if err := saveSnapshot(ctx, http.DefaultClient); err != nil {
-		slog.Error("save snapshot", "error", err)
+		return status
 	}
 
 	return status
+}
+
+func restoreDatabaseIfMissing(dbPath, litestreamBin, configPath string, run func(string, ...string) error) (bool, error) {
+	if _, err := os.Stat(dbPath); err == nil {
+		return false, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, fmt.Errorf("stat database: %w", err)
+	}
+
+	slog.Info("Grafana database is missing; restoring with Litestream", "database", dbPath)
+	if err := run(
+		litestreamBin,
+		"restore",
+		"-config", configPath,
+		"-if-replica-exists",
+		"-integrity-check", "quick",
+		dbPath,
+	); err != nil {
+		return false, fmt.Errorf("run Litestream restore: %w", err)
+	}
+	return true, nil
 }
 
 func newWebDAVProxy(target *url.URL) http.Handler {
@@ -286,7 +271,7 @@ func saveSnapshot(ctx context.Context, client *http.Client) error {
 	gw := gzip.NewWriter(&body)
 	tw := tar.NewWriter(gw)
 
-	if err := writeLitestreamSnapshot(tw, "/var/lib/grafana/grafana.db"); err != nil {
+	if err := writeLitestreamSnapshot(tw, grafanaDBPath); err != nil {
 		return err
 	}
 	if err := tw.Close(); err != nil {
