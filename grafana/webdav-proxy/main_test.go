@@ -239,6 +239,39 @@ func TestWriteLitestreamSnapshot(t *testing.T) {
 	}
 }
 
+func TestRestoreFromReaderDoesNotLeavePartialFiles(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "grafana.db")
+
+	var body bytes.Buffer
+	gw := gzip.NewWriter(&body)
+	tw := tar.NewWriter(gw)
+	if err := tw.WriteHeader(&tar.Header{Name: db, Mode: 0o600, Size: 8, Typeflag: tar.TypeReg}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write([]byte("partial")); err != nil {
+		t.Fatal(err)
+	}
+	// Close gzip without completing the tar stream to simulate a truncated snapshot.
+	if err := gw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := restoreFromReader(&body); err == nil {
+		t.Fatal("restoreFromReader() error = nil, want truncated archive error")
+	}
+	if _, err := os.Stat(db); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stat restored database error = %v, want file not to exist", err)
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, ".snapshot-restore-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("temporary restore files remain: %q", matches)
+	}
+}
+
 func TestDelayedProcessTaskStartsOnlyAfterDelay(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const delay = 10 * time.Second

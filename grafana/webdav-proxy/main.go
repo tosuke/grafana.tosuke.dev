@@ -217,6 +217,16 @@ func restoreFromReader(r io.Reader) error {
 
 	tr := tar.NewReader(gr)
 	madeDir := make(map[string]bool)
+	type stagedFile struct {
+		target string
+		temp   string
+	}
+	var staged []stagedFile
+	defer func() {
+		for _, file := range staged {
+			_ = os.Remove(file.temp)
+		}
+	}()
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -244,12 +254,16 @@ func restoreFromReader(r io.Reader) error {
 				madeDir[dir] = true
 			}
 
+			var tempName string
 			if err := func() error {
-				f, err := os.OpenFile(hdr.Name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
+				f, err := os.CreateTemp(dir, ".snapshot-restore-*")
 				if err != nil {
 					return err
 				}
-				defer f.Close()
+				tempName = f.Name()
+				defer func() {
+					_ = f.Close()
+				}()
 
 				n, err := io.Copy(f, tr)
 				if err != nil {
@@ -258,12 +272,27 @@ func restoreFromReader(r io.Reader) error {
 				if n != info.Size() {
 					return fmt.Errorf("unexpected number of bytes written for %s: got %d, want %d", hdr.Name, n, info.Size())
 				}
-				return nil
+				if err := f.Chmod(info.Mode().Perm()); err != nil {
+					return err
+				}
+				return f.Close()
 			}(); err != nil {
+				if tempName != "" {
+					_ = os.Remove(tempName)
+				}
 				return err
 			}
+			staged = append(staged, stagedFile{target: hdr.Name, temp: tempName})
 		default:
 			return errors.New("unexpected file type in snapshot: " + hdr.Name)
+		}
+	}
+	if err := gr.Close(); err != nil {
+		return err
+	}
+	for _, file := range staged {
+		if err := os.Rename(file.temp, file.target); err != nil {
+			return err
 		}
 	}
 	return nil
