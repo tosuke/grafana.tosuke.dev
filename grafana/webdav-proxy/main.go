@@ -57,6 +57,8 @@ func run() (status int) {
 		return 2
 	}
 
+	var tasks []task
+
 	target, err := url.Parse(*upstream)
 	if err != nil {
 		slog.Error("parse upstream URL", "error", err)
@@ -73,7 +75,8 @@ func run() (status int) {
 		Handler:           newWebDAVProxy(target),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	proxy := &webDAVTask{server: proxyServer, listener: listener}
+	tasks = append(tasks, &webDAVTask{server: proxyServer, listener: listener})
+	tasks = append(tasks, newDelayedProcessTask([]string{*litestreamBin, "replicate", "-config", *litestreamConfig}, *replicationDelay))
 
 	primary := newProcessTask(command)
 	primary.beforeStart = func() error {
@@ -95,13 +98,13 @@ func run() (status int) {
 		}
 		return nil
 	}
-	replication := newDelayedProcessTask([]string{*litestreamBin, "replicate", "-config", *litestreamConfig}, *replicationDelay)
+	tasks = append(tasks, primary)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigChan)
 
-	status, save := superviseTasks([]task{proxy, primary, replication}, sigChan)
+	status, save := superviseTasks(tasks, sigChan)
 	if save {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
