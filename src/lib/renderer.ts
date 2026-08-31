@@ -3,7 +3,7 @@ import { Buffer } from "node:buffer";
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import * as z from "zod/mini";
-import { launch, type Page } from "@cloudflare/playwright";
+import { type Page } from "@cloudflare/puppeteer";
 
 const MIN_WIDTH = 1000;
 const MIN_HEIGHT = 500;
@@ -71,35 +71,42 @@ export function createRendererApp(fetcher: (req: Request) => Promise<Response> =
           return c.text("PDF rendering is not implemented yet", 501);
         }
 
-        await using browser = await launch(env.BROWSER);
-        await using page = await browser.newPage();
+        const { default: puppeteer } = await import("@cloudflare/puppeteer");
 
-        const initPageTasks = [];
-        initPageTasks.push(
-          page.setViewportSize({
-            width: viewPortWidth,
-            height: viewPortHeight,
-          }),
-        );
-        if (domain) {
-          const cache = await caches.open("renderer-cache");
+        const browser = await puppeteer.launch(env.BROWSER);
+        try {
+          const page = await browser.newPage();
+
+          const initPageTasks = [];
           initPageTasks.push(
-            page.route(
-              (url) => url.hostname === domain,
-              (route) =>
-                tracing.enterSpan("proxy renderer request", async (span) => {
-                  const routeRequest = route.request();
-                  span.setAttribute("http.method", routeRequest.method());
-                  span.setAttribute("http.url", routeRequest.url());
+            page.setViewport({
+              width: viewPortWidth,
+              height: viewPortHeight,
+            }),
+          );
+          if (domain) {
+            const cache = await caches.open("renderer-cache");
+            await page.setRequestInterception(true);
+            page.on("request", (request) => {
+              void tracing
+                .enterSpan("proxy renderer request", async (span) => {
+                  const requestUrl = new URL(request.url());
+                  if (requestUrl.hostname !== domain) {
+                    await request.continue();
+                    return;
+                  }
 
-                  const headers = new Headers(routeRequest.headers());
+                  span.setAttribute("http.method", request.method());
+                  span.setAttribute("http.url", request.url());
+
+                  const headers = new Headers(request.headers());
                   if (renderKey) {
                     headers.set("Cookie", `renderKey=${renderKey ?? ""}`);
                   }
-                  const req = new Request(routeRequest.url(), {
-                    method: routeRequest.method(),
+                  const req = new Request(request.url(), {
+                    method: request.method(),
                     headers: headers,
-                    body: routeRequest.postDataBuffer(),
+                    body: request.postData() ?? null,
                   });
 
                   let resp = await cache.match(req);
@@ -111,66 +118,77 @@ export function createRendererApp(fetcher: (req: Request) => Promise<Response> =
                   }
                   span.setAttribute("http.status_code", resp.status);
 
-                  await route.fulfill({
+                  await request.respond({
                     status: resp.status,
                     contentType: resp.headers.get("content-type") ?? "application/octet-stream",
                     body: Buffer.from(await resp.arrayBuffer()),
                   });
-                }),
-            ),
-          );
-        }
-
-        const { promise: renderMessage, resolve: resolveRenderMessage } = Promise.withResolvers();
-        initPageTasks.push(
-          page.exposeBinding("__grafanaImageRendererMessageChannel", (_source, msg) => {
-            resolveRenderMessage(msg);
-          }),
-        );
-
-        await Promise.all(initPageTasks);
-
-        await page.goto(url, {
-          timeout: RENDER_TIMEOUT_MS,
-        });
-        await scrollWholePage(page);
-        const supportsBinding = await page.evaluate(() => {
-          const globals = globalThis as unknown as BrowserPageGlobals;
-          return globals.window.__grafanaRenderBindingSupported === true;
-        });
-        if (supportsBinding) {
-          await Promise.race([
-            renderMessage,
-            scheduler.wait(RENDER_TIMEOUT_MS).then(() => {
-              throw new Error(`Timed out waiting for page readiness after ${RENDER_TIMEOUT_MS}ms`);
-            }),
-          ]);
-        } else {
-          await page.waitForLoadState("networkidle", {
-            timeout: RENDER_TIMEOUT_MS,
-          });
-        }
-
-        if (requireFullPage) {
-          const scrollHeight = await page.evaluate(() => {
-            const { document } = globalThis as unknown as BrowserPageGlobals;
-            return document.body.scrollHeight;
-          });
-          if (scrollHeight > viewPortHeight) {
-            await page.setViewportSize({
-              width: viewPortWidth,
-              height: scrollHeight,
+                })
+                .catch(async (error: unknown) => {
+                  console.error("Failed to proxy renderer request", error);
+                  if (!request.isInterceptResolutionHandled()) {
+                    await request.abort();
+                  }
+                });
             });
           }
+
+          const { promise: renderMessage, resolve: resolveRenderMessage } =
+            Promise.withResolvers<unknown>();
+          initPageTasks.push(
+            page.exposeFunction("__grafanaImageRendererMessageChannel", (msg: unknown) => {
+              resolveRenderMessage(msg);
+            }),
+          );
+
+          await Promise.all(initPageTasks);
+
+          await page.goto(url, {
+            timeout: RENDER_TIMEOUT_MS,
+          });
+          await scrollWholePage(page);
+          const supportsBinding = await page.evaluate(() => {
+            const globals = globalThis as unknown as BrowserPageGlobals;
+            return globals.window.__grafanaRenderBindingSupported === true;
+          });
+          if (supportsBinding) {
+            await Promise.race([
+              renderMessage,
+              scheduler.wait(RENDER_TIMEOUT_MS).then(() => {
+                throw new Error(
+                  `Timed out waiting for page readiness after ${RENDER_TIMEOUT_MS}ms`,
+                );
+              }),
+            ]);
+          } else {
+            await page.waitForNetworkIdle({
+              timeout: RENDER_TIMEOUT_MS,
+            });
+          }
+
+          if (requireFullPage) {
+            const scrollHeight = await page.evaluate(() => {
+              const { document } = globalThis as unknown as BrowserPageGlobals;
+              return document.body.scrollHeight;
+            });
+            if (scrollHeight > viewPortHeight) {
+              await page.setViewport({
+                width: viewPortWidth,
+                height: scrollHeight,
+              });
+            }
+          }
+
+          const buffer = await page.screenshot({
+            type: "png",
+          });
+
+          return c.body(new Uint8Array(buffer), 200, {
+            "Content-Type": "image/png",
+          });
+        } finally {
+          await browser.close();
         }
-
-        const buffer = await page.screenshot({
-          type: "png",
-        });
-
-        return c.body(new Uint8Array(buffer), 200, {
-          "Content-Type": "image/png",
-        });
       }),
   );
 
@@ -182,7 +200,7 @@ export function createRendererApp(fetcher: (req: Request) => Promise<Response> =
 }
 
 async function scrollWholePage(page: Page): Promise<void> {
-  await page.waitForTimeout(SCROLL_WAIT_MS);
+  await scheduler.wait(SCROLL_WAIT_MS);
   const numScrolls = await page.evaluate(() => {
     const { document, window } = globalThis as unknown as BrowserPageGlobals;
     return Math.floor(document.body.scrollHeight / window.innerHeight);
@@ -192,7 +210,7 @@ async function scrollWholePage(page: Page): Promise<void> {
       const { window } = globalThis as unknown as BrowserPageGlobals;
       window.scrollBy(0, window.innerHeight);
     });
-    await page.waitForTimeout(SCROLL_WAIT_MS);
+    await scheduler.wait(SCROLL_WAIT_MS);
   }
   await page.evaluate(() => {
     const { window } = globalThis as unknown as BrowserPageGlobals;
