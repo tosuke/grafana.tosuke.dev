@@ -19,8 +19,8 @@ import (
 	"os/exec"
 	"os/signal"
 	"path"
+	"path/filepath"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -301,23 +301,41 @@ func saveSnapshot(ctx context.Context, client *http.Client) error {
 }
 
 func writeLitestreamSnapshot(tw *tar.Writer, db string) error {
-	dir := path.Dir(db)
-	base := path.Base(db)
-	fsys := os.DirFS(dir)
-	return fs.WalkDir(fsys, ".", func(name string, d fs.DirEntry, err error) error {
+	var errs []error
+	for _, name := range []string{
+		db, db + "-wal", db + "-shm",
+	} {
+		absPath, err := filepath.Abs(name)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("get absolute path for %s: %w", name, err))
+			continue
+		}
+		info, err := os.Stat(absPath)
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				errs = append(errs, fmt.Errorf("stat %s: %w", name, err))
+			}
+			continue
+		}
+
+		if err := writeFileToTar(tw, absPath, info); err != nil {
+			errs = append(errs, fmt.Errorf("write %s to tar: %w", name, err))
+			continue
+		}
+	}
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
+
+	litestreamStateDir, err := filepath.Abs(path.Join(path.Dir(db), "."+path.Base(db)+"-litestream"))
+	if err != nil {
+		return fmt.Errorf("get absolute path for litestream state dir: %w", err)
+	}
+	if err := fs.WalkDir(os.DirFS(litestreamStateDir), ".", func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if name == "." {
-			return nil
-		}
-		if name != base &&
-			name != base+"-wal" &&
-			name != base+"-shm" &&
-			!strings.HasPrefix(name, "."+base+"-litestream") {
-			if d.IsDir() {
-				return fs.SkipDir
-			}
 			return nil
 		}
 
@@ -325,28 +343,39 @@ func writeLitestreamSnapshot(tw *tar.Writer, db string) error {
 		if err != nil {
 			return err
 		}
-		h, err := tar.FileInfoHeader(info, "")
-		if err != nil {
-			return err
-		}
-		h.Name = path.Join(dir, name)
-		if d.IsDir() {
-			h.Name += "/"
-		}
-		if err := tw.WriteHeader(h); err != nil {
-			return err
-		}
-		if !d.Type().IsRegular() {
-			return nil
-		}
-		f, err := fsys.Open(name)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		if _, err := io.Copy(tw, f); err != nil {
-			return err
+		if err := writeFileToTar(tw, path.Join(litestreamStateDir, name), info); err != nil {
+			return fmt.Errorf("write %s to tar: %w", name, err)
 		}
 		return nil
-	})
+	}); err != nil {
+		return fmt.Errorf("add litestream state dir to tar: %w", err)
+	}
+
+	return nil
+}
+
+func writeFileToTar(tw *tar.Writer, name string, info fs.FileInfo) error {
+	hdr, err := tar.FileInfoHeader(info, "")
+	if err != nil {
+		return fmt.Errorf("create tar header: %w", err)
+	}
+	hdr.Name = name
+	if err := tw.WriteHeader(hdr); err != nil {
+		return fmt.Errorf("write tar header: %w", err)
+	}
+
+	if info.IsDir() {
+		return nil
+	}
+
+	file, err := os.Open(name)
+	if err != nil {
+		return fmt.Errorf("open file: %w", err)
+	}
+	defer file.Close()
+
+	if _, err := io.Copy(tw, file); err != nil {
+		return fmt.Errorf("copy file to tar: %w", err)
+	}
+	return nil
 }

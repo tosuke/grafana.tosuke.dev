@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -9,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/synctest"
@@ -168,6 +171,71 @@ func TestRestoreDatabaseIfMissing(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestWriteLitestreamSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	db := dir + "/grafana.db"
+	litestreamDir := dir + "/.grafana.db-litestream"
+	want := map[string]string{
+		db:                                       "database bytes",
+		db + "-wal":                              "wal bytes",
+		db + "-shm":                              "shm bytes",
+		litestreamDir + "/generation":            "generation bytes",
+		litestreamDir + "/00000000/00000001.ltx": "ltx bytes",
+	}
+	for name, body := range want {
+		if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(name, []byte(body), 0o640); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(dir+"/unrelated.txt", []byte("must not be archived"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	var body bytes.Buffer
+	tw := tar.NewWriter(&body)
+	if err := writeLitestreamSnapshot(tw, db); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	tr := tar.NewReader(&body)
+	got := make(map[string]string)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !hdr.FileInfo().Mode().IsRegular() {
+			continue
+		}
+		contents, err := io.ReadAll(tr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got[hdr.Name] = string(contents)
+	}
+
+	if len(got) != len(want) {
+		t.Fatalf("snapshot entries = %d, want %d: %#v", len(got), len(want), got)
+	}
+	for name, wantContents := range want {
+		if gotContents, ok := got[name]; !ok || gotContents != wantContents {
+			t.Errorf("snapshot[%q] = %q, present %t; want %q", name, gotContents, ok, wantContents)
+		}
+	}
+	if _, ok := got[dir+"/unrelated.txt"]; ok {
+		t.Errorf("snapshot contains unrelated file")
 	}
 }
 
