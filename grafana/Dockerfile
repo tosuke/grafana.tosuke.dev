@@ -9,13 +9,13 @@ RUN --mount=type=bind,source=webdav-proxy,target=. \
 
 FROM litestream/litestream:0.5.16-scratch AS litestream
 
-FROM grafana/grafana:13.1.3 AS grafana-plugin-installer
+FROM grafana/grafana:13.2.0 AS grafana-plugin-installer
 RUN grafana cli plugins install grafana-llm-app
 RUN grafana cli plugins install grafana-metricsdrilldown-app 2.5.0
 RUN grafana cli plugins install grafana-lokiexplore-app 2.5.1
 RUN grafana cli plugins install grafana-exploretraces-app
 
-FROM grafana/grafana:13.1.3-distroless
+FROM grafana/grafana:13.2.0-distroless
 COPY --from=litestream /usr/local/bin/litestream /usr/local/bin/litestream
 COPY --from=webdav-proxy /webdav-proxy /usr/local/bin/webdav-proxy
 COPY --from=grafana-plugin-installer --chown=472:0 /var/lib/grafana/plugins /var/lib/grafana/plugins
