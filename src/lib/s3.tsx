@@ -4,7 +4,6 @@
 import { SyntaxValidator } from "fast-xml-validator";
 import { XMLParser } from "fast-xml-parser";
 import { Hono, type Context } from "hono";
-import { HTTPException } from "hono/http-exception";
 import * as z from "zod/mini";
 import type {
   S3Backend,
@@ -22,6 +21,12 @@ import type { JSX } from "hono/jsx/jsx-runtime";
 const XMLNS = "http://s3.amazonaws.com/doc/2006-03-01/";
 
 const ListBucketResult = "ListBucketResult";
+const ListAllMyBucketsResult = "ListAllMyBucketsResult";
+const Owner = "Owner";
+const ID = "ID";
+const DisplayName = "DisplayName";
+const Buckets = "Buckets";
+const CreationDate = "CreationDate";
 const Name = "Name";
 const Prefix = "Prefix";
 const KeyCount = "KeyCount";
@@ -77,61 +82,74 @@ const completeMultipartUploadRequestSchema = z.object({
 export function createS3App(bucketName: string, backend: S3Backend): Hono {
   const app = new Hono();
 
-  app.get("/", (c) => listObjects(c, backend, bucketName));
-  app.on("HEAD", "/", dummyHeadBucket);
-  app.put("/", dummyCreateBucket);
-  app.delete("/", dummyDeleteBucket);
-  app.post("/", (c) => {
-    return c.req.query("delete") !== undefined
-      ? deleteObjects(c, backend)
-      : notImplemented(c.req.path);
-  });
+  app.get("/", (c) => listBucketsResult(c, bucketName));
 
-  app.get("/*", (c) => getObject(c, backend, getObjectKey(c), false));
-  app.on("HEAD", "/*", (c) => getObject(c, backend, getObjectKey(c), true));
-  app.put("/*", (c) => {
-    const key = getObjectKey(c);
-    const partNumber = c.req.query("partNumber");
-    const uploadId = c.req.query("uploadId");
-    const hasPartNumber = partNumber !== undefined;
-    const hasUploadId = uploadId !== undefined;
-    if (hasPartNumber && hasUploadId) {
-      return uploadPart(c, backend, key, partNumber, uploadId);
-    }
-    if (hasPartNumber || hasUploadId) {
-      return s3Error(
-        "InvalidRequest",
-        "Both partNumber and uploadId are required.",
-        c.req.path,
-        400,
-      );
-    }
-    return putObject(c, backend, key);
-  });
-  app.delete("/*", (c) => {
-    const key = getObjectKey(c);
-    const uploadId = c.req.query("uploadId");
-    return uploadId !== undefined
-      ? abortMultipart(c, backend, key, uploadId)
-      : deleteObject(backend, key);
-  });
-  app.post("/*", (c) => {
-    const key = getObjectKey(c);
-    const uploads = c.req.query("uploads");
-    const uploadId = c.req.query("uploadId");
-    if (uploads !== undefined) return createMultipart(c, backend, bucketName, key);
-    if (uploadId !== undefined) {
-      return completeMultipart(c, backend, bucketName, key, uploadId);
-    }
-    return notImplemented(c.req.path);
-  });
+  for (const path of ["/:bucket", "/:bucket/"]) {
+    app.get(path, (c) => bucketRequest(c, bucketName, () => listObjects(c, backend, bucketName)));
+    app.on("HEAD", path, (c) => bucketRequest(c, bucketName, dummyHeadBucket));
+    app.put(path, (c) => bucketRequest(c, bucketName, dummyCreateBucket));
+    app.delete(path, (c) => bucketRequest(c, bucketName, dummyDeleteBucket));
+    app.post(path, (c) =>
+      bucketRequest(c, bucketName, () =>
+        c.req.query("delete") !== undefined
+          ? deleteObjects(c, backend)
+          : notImplemented(c.req.path),
+      ),
+    );
+  }
+
+  app.get("/:bucket/*", (c) =>
+    objectRequest(c, bucketName, (key) => getObject(c, backend, key, false)),
+  );
+  app.on("HEAD", "/:bucket/*", (c) =>
+    objectRequest(c, bucketName, (key) => getObject(c, backend, key, true)),
+  );
+  app.put("/:bucket/*", (c) =>
+    objectRequest(c, bucketName, (key) => {
+      const partNumber = c.req.query("partNumber");
+      const uploadId = c.req.query("uploadId");
+      const hasPartNumber = partNumber !== undefined;
+      const hasUploadId = uploadId !== undefined;
+      if (hasPartNumber && hasUploadId) {
+        return uploadPart(c, backend, key, partNumber, uploadId);
+      }
+      if (hasPartNumber || hasUploadId) {
+        return s3Error(
+          "InvalidRequest",
+          "Both partNumber and uploadId are required.",
+          c.req.path,
+          400,
+        );
+      }
+      return putObject(c, backend, key);
+    }),
+  );
+  app.delete("/:bucket/*", (c) =>
+    objectRequest(c, bucketName, (key) => {
+      const uploadId = c.req.query("uploadId");
+      return uploadId !== undefined
+        ? abortMultipart(c, backend, key, uploadId)
+        : deleteObject(backend, key);
+    }),
+  );
+  app.post("/:bucket/*", (c) =>
+    objectRequest(c, bucketName, (key) => {
+      const uploads = c.req.query("uploads");
+      const uploadId = c.req.query("uploadId");
+      if (uploads !== undefined) return createMultipart(c, backend, bucketName, key);
+      if (uploadId !== undefined) {
+        return completeMultipart(c, backend, bucketName, key, uploadId);
+      }
+      return notImplemented(c.req.path);
+    }),
+  );
 
   app.all("*", (c) => notImplemented(c.req.path));
   return app;
 }
 
 function objectKey(path: string): string {
-  const value = path.replace(/^\//, "");
+  const value = path.replace(/^\/[^/]+\/?/, "");
   try {
     return decodeURIComponent(value);
   } catch {
@@ -139,13 +157,28 @@ function objectKey(path: string): string {
   }
 }
 
-function getObjectKey(c: Context): string {
+function bucketRequest(
+  c: Context,
+  bucketName: string,
+  handler: () => Response | Promise<Response>,
+): Response | Promise<Response> {
+  if (c.req.param("bucket") !== bucketName) {
+    return s3Error("NoSuchBucket", "The specified bucket does not exist.", c.req.path, 404);
+  }
+  return handler();
+}
+
+function objectRequest(
+  c: Context,
+  bucketName: string,
+  handler: (key: string) => Response | Promise<Response>,
+): Response | Promise<Response> {
+  if (c.req.param("bucket") !== bucketName) {
+    return s3Error("NoSuchBucket", "The specified bucket does not exist.", c.req.path, 404);
+  }
   const key = objectKey(c.req.path);
-  if (!key)
-    throw new HTTPException(400, {
-      res: s3Error("InvalidRequest", "Object key must not be empty", c.req.path, 400),
-    });
-  return key;
+  if (!key) return s3Error("InvalidRequest", "Object key must not be empty", c.req.path, 400);
+  return handler(key);
 }
 
 function dummyHeadBucket(): Response {
@@ -279,6 +312,24 @@ async function listObjects(c: Context, backend: S3Backend, bucketName: string): 
 function parseMaxKeys(value: string | undefined): number {
   if (value === undefined || !/^\d+$/.test(value)) return 1000;
   return Math.min(Number(value), 1000);
+}
+
+function listBucketsResult(c: Context, bucketName: string): Response {
+  return xml(
+    c,
+    <ListAllMyBucketsResult xmlns={XMLNS}>
+      <Owner>
+        <ID>s3-bridge</ID>
+        <DisplayName>s3-bridge</DisplayName>
+      </Owner>
+      <Buckets>
+        <Bucket>
+          <Name>{bucketName}</Name>
+          <CreationDate>1970-01-01T00:00:00.000Z</CreationDate>
+        </Bucket>
+      </Buckets>
+    </ListAllMyBucketsResult>,
+  );
 }
 
 async function deleteObjects(c: Context, backend: S3Backend): Promise<Response> {

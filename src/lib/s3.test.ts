@@ -7,7 +7,8 @@ import { R2S3Backend } from "./s3-r2-backend";
 import type { S3Backend } from "./s3-backend";
 
 const objectPrefix = "test/s3-bridge/";
-const app = createS3App("grafana-ltx", new R2S3Backend(env.GRAFANA_LTX_BUCKET));
+const bucketName = "grafana-ltx";
+const app = createS3App(bucketName, new R2S3Backend(env.GRAFANA_LTX_BUCKET));
 const parse = (body: string) =>
   new XMLParser({ htmlEntities: true, removeNSPrefix: true }).parse(body) as Record<
     string,
@@ -54,7 +55,7 @@ async function signedRequest(path: string, init?: RequestInit): Promise<Request>
 }
 
 async function s3Fetch(path: string, init?: RequestInit): Promise<Response> {
-  return app.fetch(await signedRequest(path, init));
+  return app.fetch(await signedRequest(`/${bucketName}${path}`, init));
 }
 
 async function s3FetchWith(
@@ -62,7 +63,7 @@ async function s3FetchWith(
   path: string,
   init?: RequestInit,
 ): Promise<Response> {
-  return createS3App("grafana-ltx", backend).fetch(await signedRequest(path, init));
+  return createS3App(bucketName, backend).fetch(await signedRequest(`/${bucketName}${path}`, init));
 }
 
 function objectPath(key: string): string {
@@ -124,6 +125,13 @@ describe("S3 bridge", () => {
     expect(list.status).toBe(200);
     expect(calls.list).toEqual({ prefix: "other-bucket/", limit: 1000 });
     await s3FetchWith(fake, "/other-bucket/encoded%20key");
+    expect(calls.get).toEqual({ key: "other-bucket/encoded key", options: {} });
+
+    const wrongBucket = await createS3App(bucketName, fake).fetch(
+      await signedRequest("/wrong-bucket/encoded%20key"),
+    );
+    expect(wrongBucket.status).toBe(404);
+    expect(xmlCode(await wrongBucket.text())).toBe("NoSuchBucket");
     expect(calls.get).toEqual({ key: "other-bucket/encoded key", options: {} });
   });
 
@@ -210,7 +218,10 @@ describe("S3 bridge", () => {
     expect(signed.headers.get("x-amz-content-sha256")).toMatch(
       /^(?:[\da-f]{64}|UNSIGNED-PAYLOAD)$/,
     );
-    expect((await s3Fetch("/")).status).toBe(200);
+    const buckets = parse(await (await app.fetch(await signedRequest("/"))).text())
+      .ListAllMyBucketsResult as Record<string, unknown>;
+    const bucket = (buckets.Buckets as Record<string, unknown>).Bucket as Record<string, unknown>;
+    expect(bucket.Name).toBe(bucketName);
     expect((await s3Fetch("/", { method: "HEAD" })).status).toBe(200);
     expect((await s3Fetch("/", { method: "PUT" })).status).toBe(200);
     expect((await s3Fetch("/", { method: "DELETE" })).status).toBe(204);
