@@ -4,8 +4,16 @@ socket:
   enabled: true
   path: /tmp/litestream.sock
 
+access-key-id: dummy
+secret-access-key: dummy
+
 dbs:
   - path: /var/lib/grafana/grafana.db
     replica:
-      url: webdav://127.0.0.1:8080/
+      type: s3
+      bucket: grafana-ltx
+      path: ltx
+      region: us-east-1
+      endpoint: http://s3.worker
+      force-path-style: true
       sync-interval: 1s
