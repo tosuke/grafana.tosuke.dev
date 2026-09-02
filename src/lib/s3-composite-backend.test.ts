@@ -63,11 +63,11 @@ class MemoryBackend implements S3Backend {
       index = matching.findIndex((object) => compareUtf8(object.key, options.startAfter!) > 0);
       if (index < 0) index = matching.length;
     }
-    const object = matching[index];
-    if (object === undefined) return { objects: [], delimitedPrefixes: [], truncated: false };
-    return index + 1 < matching.length
-      ? { objects: [object], delimitedPrefixes: [], truncated: true, cursor: String(index + 1) }
-      : { objects: [object], delimitedPrefixes: [], truncated: false };
+    const objects = matching.slice(index, index + options.limit);
+    const next = index + objects.length;
+    return next < matching.length
+      ? { objects, delimitedPrefixes: [], truncated: true, cursor: String(next) }
+      : { objects, delimitedPrefixes: [], truncated: false };
   }
 
   async createMultipartUpload(key: string, _options: S3PutOptions): Promise<S3MultipartUpload> {
@@ -235,7 +235,7 @@ describe("CompositeS3Backend", () => {
 
     expect(page).toMatchObject({ truncated: false });
     expect(page.objects.map(({ key }) => key)).toEqual(keys);
-    expect(explicit.listCalls).toHaveLength(keys.length);
+    expect(explicit.listCalls).toEqual([{ prefix: "ltx/0000/", limit: 1000 }]);
   });
 
   it("groups shared delimiter prefixes across sources", async () => {
@@ -261,19 +261,21 @@ describe("CompositeS3Backend", () => {
     expect(page.objects.map(({ key }) => key)).toEqual(["aa"]);
     expect(route.listCalls[0]?.startAfter).toBe("a");
     expect((await composite().listObjects({ prefix: "x", limit: 1 })).truncated).toBe(false);
-    const paged = await backend.listObjects({ prefix: "a", limit: 1 });
+    // Use a prefix outside the route so this exercises the composite cursor,
+    // rather than the delegated backend's opaque cursor.
+    const paged = await backend.listObjects({ prefix: "", limit: 1 });
     if (!paged.truncated) throw new Error("expected cursor");
     await expect(
-      backend.listObjects({ prefix: "b", limit: 1, cursor: paged.cursor }),
+      backend.listObjects({ prefix: "x", limit: 1, cursor: paged.cursor }),
     ).rejects.toThrow("Invalid cursor");
     await expect(
-      backend.listObjects({ prefix: "a", limit: 1, cursor: "not-base64" }),
+      backend.listObjects({ prefix: "", limit: 1, cursor: "not-base64" }),
     ).rejects.toThrow("Invalid cursor");
     const unknownTopLevel = rewriteCursor(paged.cursor, (value) => {
       value.extra = true;
     });
     await expect(
-      backend.listObjects({ prefix: "a", limit: 1, cursor: unknownTopLevel }),
+      backend.listObjects({ prefix: "", limit: 1, cursor: unknownTopLevel }),
     ).rejects.toThrow("Invalid cursor");
     const unknownSource = rewriteCursor(paged.cursor, (value) => {
       const source = value.sources[0];
@@ -281,7 +283,7 @@ describe("CompositeS3Backend", () => {
       source.extra = true;
     });
     await expect(
-      backend.listObjects({ prefix: "a", limit: 1, cursor: unknownSource }),
+      backend.listObjects({ prefix: "", limit: 1, cursor: unknownSource }),
     ).rejects.toThrow("Invalid cursor");
   });
 

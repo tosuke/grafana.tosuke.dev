@@ -121,6 +121,11 @@ export class CompositeS3Backend implements S3Backend {
   async listObjects(options: S3ListOptions): Promise<S3ListResult> {
     if (options.limit <= 0) return { objects: [], delimitedPrefixes: [], truncated: false };
 
+    const enclosingRoute = this.#routes.find((route) => options.prefix.startsWith(route.prefix));
+    if (enclosingRoute !== undefined) {
+      return enclosingRoute.backend.listObjects(options);
+    }
+
     const sources = this.#sourcesFor(options.prefix);
     const states = this.#statesFor(sources, options);
     for (const state of states) await this.#ensureHead(state);
@@ -205,18 +210,6 @@ export class CompositeS3Backend implements S3Backend {
   }
 
   #sourcesFor(prefix: string): readonly RouteSource[] {
-    const enclosingRoute = this.#routes.find((route) => prefix.startsWith(route.prefix));
-    if (enclosingRoute) {
-      return [
-        {
-          id: enclosingRoute.prefix,
-          route: enclosingRoute,
-          backend: enclosingRoute.backend,
-          prefix,
-        },
-      ];
-    }
-
     const sources: RouteSource[] = [];
     for (const route of this.#routes) {
       if (!route.prefix.startsWith(prefix)) continue;
