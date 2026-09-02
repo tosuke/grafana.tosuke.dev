@@ -9,6 +9,7 @@ secret-access-key: dummy
 
 dbs:
   - path: /var/lib/grafana/grafana.db
+    auto-recover: true
     replica:
       type: s3
       bucket: grafana-ltx
