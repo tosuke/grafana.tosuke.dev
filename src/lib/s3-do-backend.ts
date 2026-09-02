@@ -221,12 +221,7 @@ export class DOS3Store extends RpcTarget {
     this.storage.transactionSync(() => {
       for (const key of keys) {
         const id = this.id(key);
-        this.storage.sql.exec(
-          `
-            DELETE FROM s3_objects
-                  WHERE key = ?`,
-          key,
-        );
+        this.storage.sql.exec("DELETE FROM s3_objects WHERE key = ?", key);
         if (id) this.cleanup(id);
       }
     });
@@ -319,8 +314,13 @@ export class DOS3Store extends RpcTarget {
   }
 
   private cleanup(id: string) {
-    if (!this.storage.sql.exec("SELECT 1 FROM s3_objects WHERE upload_id = ?", id).toArray().length)
+    if (
+      !this.storage.sql.exec("SELECT 1 FROM s3_objects WHERE upload_id = ?", id).toArray().length
+    ) {
       this.storage.sql.exec("DELETE FROM s3_uploads WHERE id = ?", id);
+      this.storage.sql.exec("DELETE FROM s3_parts WHERE upload_id = ?", id);
+      this.storage.sql.exec("DELETE FROM s3_chunks WHERE upload_id = ?", id);
+    }
   }
 }
 
@@ -349,19 +349,9 @@ class DOS3Upload extends RpcTarget {
   // TODO: Workers RPC doesn't support placing RpcPromises into the parameters.
   // After that is fixed, this can be made to return a RpcPromise<UploadPart extends RpcTarget> instead of a plain part object.
   async uploadPart(partNumber: number, body: ReadableStream<Uint8Array> | null) {
-    if (!this.isPending()) throw new Error("No such upload");
-    const result = await this.storage.transaction(async () => {
-      if (!this.isPending()) return { kind: "no-such-upload" } as const;
-      this.storage.sql.exec(
-        "DELETE FROM s3_chunks WHERE upload_id = ? AND part_number = ?",
-        this.id,
-        partNumber,
-      );
-      this.storage.sql.exec(
-        "DELETE FROM s3_parts WHERE upload_id = ? AND part_number = ?",
-        this.id,
-        partNumber,
-      );
+    // Upload the part in chunks, without linking them to the part yet.
+    const chunkIDs: string[] = [];
+    try {
       let size = 0;
       if (body != null) {
         let buffer = new Uint8Array(0);
@@ -370,14 +360,16 @@ class DOS3Upload extends RpcTarget {
         let split = 0;
 
         const insertChunk = (chunk: Uint8Array) => {
+          const chunkID = crypto.randomUUID();
           this.storage.sql.exec(
-            "INSERT INTO s3_chunks (upload_id, part_number, part_split, size, data) VALUES (?, ?, ?, ?, ?)",
-            this.id,
+            "INSERT INTO s3_chunks (id, part_number, part_split, size, data) VALUES (?, ?, ?, ?, ?)",
+            chunkID,
             partNumber,
             split++,
             chunk.byteLength,
             chunk,
           );
+          chunkIDs.push(chunkID);
         };
 
         const reader = body.getReader();
@@ -417,23 +409,60 @@ class DOS3Upload extends RpcTarget {
           reader.releaseLock();
         }
       }
-      const etag = crypto.randomUUID();
-      this.storage.sql.exec(
-        `
+
+      const result = this.storage.transactionSync(() => {
+        if (!this.isPending()) return { kind: "no-such-upload" } as const;
+
+        // Delete any existing chunks and part for this part number, if any.
+        this.storage.sql.exec(
+          "DELETE FROM s3_chunks WHERE upload_id = ? AND part_number = ?",
+          this.id,
+          partNumber,
+        );
+        this.storage.sql.exec(
+          "DELETE FROM s3_parts WHERE upload_id = ? AND part_number = ?",
+          this.id,
+          partNumber,
+        );
+
+        // Link the new chunks to the part.
+        for (const chunkID of chunkIDs) {
+          this.storage.sql.exec(
+            "UPDATE s3_chunks SET upload_id = ? WHERE id = ?",
+            this.id,
+            chunkID,
+          );
+        }
+
+        const etag = crypto.randomUUID();
+        this.storage.sql.exec(
+          `
           INSERT INTO s3_parts (upload_id, part_number, etag, size)
           VALUES (?, ?, ?, ?)
           ON CONFLICT(upload_id, part_number) DO UPDATE SET
             etag = excluded.etag,
             size = excluded.size`,
-        this.id,
-        partNumber,
-        etag,
-        size,
-      );
-      return { kind: "uploaded", etag } as const;
-    });
-    if (result.kind === "no-such-upload") throw new Error("No such upload");
-    return { partNumber, etag: result.etag };
+          this.id,
+          partNumber,
+          etag,
+          size,
+        );
+        return { kind: "uploaded", etag } as const;
+      });
+      if (result.kind === "no-such-upload") throw new Error("No such upload");
+      return { partNumber, etag: result.etag };
+    } catch (err) {
+      try {
+        this.storage.transactionSync(() => {
+          for (const chunkID of chunkIDs) {
+            this.storage.sql.exec("DELETE FROM s3_chunks WHERE id = ?", chunkID);
+          }
+        });
+      } catch (cleanupErr) {
+        throw new AggregateError([err, cleanupErr], "Failed to upload part and cleanup chunks");
+      }
+      throw err;
+    }
   }
 
   complete(parts: readonly S3MultipartPart[]) {
@@ -607,27 +636,21 @@ function insertUpload(
     m.cacheExpiry?.getTime() ?? null,
   );
 }
+
 // Cursor format: the object-key boundary string's UTF-8 bytes encoded as
 // RFC 4648 URL-safe Base64, without padding.
 function encodeCursor(s: string) {
-  const bytes = new TextEncoder().encode(s);
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "");
+  return new TextEncoder().encode(s).toBase64({ alphabet: "base64url", omitPadding: true });
 }
+
 // Decode an unpadded RFC 4648 Base64URL cursor strictly, then decode its bytes
 // as fatal UTF-8; malformed Base64URL and malformed UTF-8 are rejected.
 function decodeCursor(s: string) {
-  try {
-    if (!/^[A-Za-z0-9_-]*$/.test(s) || s.length % 4 === 1) throw new Error();
-    const binary = atob(s.replaceAll("-", "+").replaceAll("_", "/"));
-    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(
-      Uint8Array.from(binary, (c) => c.charCodeAt(0)),
-    );
-  } catch {
-    throw new Error("Invalid cursor");
-  }
+  return new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(
+    Uint8Array.fromBase64(s, { alphabet: "base64url" }),
+  );
 }
+
 const MIGRATIONS: ReadonlyArray<{ version: number; up: (sql: SqlStorage) => void }> = [
   {
     version: 1,
@@ -652,14 +675,14 @@ const MIGRATIONS: ReadonlyArray<{ version: number; up: (sql: SqlStorage) => void
         `
           CREATE TABLE s3_objects (
             key TEXT PRIMARY KEY,
-            upload_id TEXT NOT NULL REFERENCES s3_uploads(id) ON DELETE CASCADE,
+            upload_id TEXT NOT NULL,
             modified_at_ms INTEGER NOT NULL
           )`,
       );
       sql.exec(
         `
           CREATE TABLE s3_parts (
-            upload_id TEXT NOT NULL REFERENCES s3_uploads(id) ON DELETE CASCADE,
+            upload_id TEXT NOT NULL,
             part_number INTEGER NOT NULL,
             etag TEXT NOT NULL,
             size INTEGER NOT NULL,
@@ -669,12 +692,12 @@ const MIGRATIONS: ReadonlyArray<{ version: number; up: (sql: SqlStorage) => void
       sql.exec(
         `
           CREATE TABLE s3_chunks (
-            upload_id TEXT NOT NULL REFERENCES s3_uploads(id) ON DELETE CASCADE,
+            id TEXT PRIMARY KEY,
+            upload_id TEXT,
             part_number INTEGER NOT NULL,
             part_split INTEGER NOT NULL,
             size INTEGER NOT NULL,
-            data BLOB NOT NULL,
-            PRIMARY KEY(upload_id, part_number, part_split)
+            data BLOB NOT NULL
           )`,
       );
     },
