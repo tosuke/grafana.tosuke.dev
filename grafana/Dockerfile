@@ -7,7 +7,7 @@ RUN --mount=type=bind,source=webdav-proxy,target=. \
 	GOTOOLCHAIN=auto CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
 	go build -trimpath -ldflags="-s -w" -o /webdav-proxy .
 
-FROM litestream/litestream:0.5.16-scratch AS litestream
+FROM litestream/litestream:0.5.17-scratch AS litestream
 
 FROM grafana/grafana:13.2.0 AS grafana-plugin-installer
 RUN grafana cli plugins install grafana-llm-app
