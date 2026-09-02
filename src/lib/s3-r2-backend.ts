@@ -169,7 +169,7 @@ function toR2Conditional(conditions: S3Conditions): R2Conditional {
   return {
     ...(conditions.ifMatch !== undefined ? { etagMatches: conditions.ifMatch } : {}),
     ...(conditions.ifNoneMatch !== undefined ? { etagDoesNotMatch: conditions.ifNoneMatch } : {}),
-    ...(conditions.ifModifiedSince !== undefined
+    ...(conditions.ifNoneMatch === undefined && conditions.ifModifiedSince !== undefined
       ? { uploadedAfter: conditions.ifModifiedSince }
       : {}),
     ...(conditions.ifUnmodifiedSince !== undefined

@@ -273,6 +273,31 @@ describe("S3 bridge", () => {
       expect(response.status).toBe(416);
       expect(xmlCode(await response.text())).toBe("InvalidRange");
     }
+    const rangeBackend: S3Backend = {
+      getObject: async () => ({ kind: "range-not-satisfiable", size: 10 }),
+      putObject: async () => {
+        throw new Error("unused");
+      },
+      deleteObjects: async () => {},
+      listObjects: async () => ({ objects: [], delimitedPrefixes: [], truncated: false }),
+      createMultipartUpload: async () => {
+        throw new Error("unused");
+      },
+      uploadPart: async () => {
+        throw new Error("unused");
+      },
+      completeMultipartUpload: async () => {
+        throw new Error("unused");
+      },
+      abortMultipartUpload: async () => {
+        throw new Error("unused");
+      },
+    };
+    const outside = await s3FetchWith(rangeBackend, "/range", {
+      headers: { Range: "bytes=99-" },
+    });
+    expect(outside.status).toBe(416);
+    expect(outside.headers.get("Content-Range")).toBe("bytes */10");
   });
 
   it("escapes special characters in XML object keys", async () => {
@@ -338,6 +363,68 @@ describe("S3 bridge", () => {
       : [v1.Contents as Record<string, unknown>];
     expect(v1Contents[0]?.Key).toBe("test/s3-bridge/order-b");
     expect(v1.NextMarker).toBe("test/s3-bridge/order-b");
+  });
+
+  it("returns a usable v1 NextMarker for a common-prefix-only page", async () => {
+    const group = "test/s3-bridge/marker/group/";
+    let marker: string | undefined;
+    const markerBackend: S3Backend = {
+      getObject: async () => ({ kind: "not-found" }),
+      putObject: async () => {
+        throw new Error("unused");
+      },
+      deleteObjects: async () => {},
+      listObjects: async (options) => {
+        marker = options.startAfter;
+        return options.startAfter === undefined
+          ? { objects: [], delimitedPrefixes: [group], truncated: true, cursor: "cursor" }
+          : {
+              objects: [
+                {
+                  key: "test/s3-bridge/marker/root",
+                  size: 4,
+                  etag: "etag",
+                  uploaded: new Date(0),
+                  httpMetadata: {},
+                },
+              ],
+              delimitedPrefixes: [],
+              truncated: false,
+            };
+      },
+      createMultipartUpload: async () => {
+        throw new Error("unused");
+      },
+      uploadPart: async () => {
+        throw new Error("unused");
+      },
+      completeMultipartUpload: async () => {
+        throw new Error("unused");
+      },
+      abortMultipartUpload: async () => {
+        throw new Error("unused");
+      },
+    };
+    const first = parse(
+      await (
+        await s3FetchWith(
+          markerBackend,
+          "/?prefix=test%2Fs3-bridge%2Fmarker%2F&delimiter=%2F&max-keys=1",
+        )
+      ).text(),
+    ).ListBucketResult as Record<string, unknown>;
+    expect(first.NextMarker).toBe("test/s3-bridge/marker/group/");
+    const second = parse(
+      await (
+        await s3FetchWith(
+          markerBackend,
+          `/?prefix=test%2Fs3-bridge%2Fmarker%2F&delimiter=%2F&max-keys=1&marker=${encodeURIComponent(String(first.NextMarker))}`,
+        )
+      ).text(),
+    ).ListBucketResult as Record<string, unknown>;
+    expect(second.Contents).toBeDefined();
+    expect(second.CommonPrefixes).toBeUndefined();
+    expect(marker).toBe(group);
   });
 
   it("deletes objects in a batch", async () => {

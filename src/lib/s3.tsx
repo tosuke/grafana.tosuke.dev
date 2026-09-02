@@ -221,6 +221,11 @@ async function getObject(
   if (result.kind === "not-found") {
     return s3Error("NoSuchKey", "The specified key does not exist.", c.req.path, 404);
   }
+  if (result.kind === "range-not-satisfiable") {
+    const response = s3Error("InvalidRange", "The requested range is not valid.", c.req.path, 416);
+    response.headers.set("Content-Range", `bytes */${result.size}`);
+    return response;
+  }
   if (result.kind === "not-modified") {
     return new Response(null, { status: 304, headers: objectHeaders(result.object) });
   }
@@ -268,6 +273,11 @@ async function listObjects(c: Context, backend: S3Backend, bucketName: string): 
     if (marker) options.startAfter = marker;
   }
   const result = await backend.listObjects(options);
+  const nextMarker =
+    [result.objects.at(-1)?.key, result.delimitedPrefixes.at(-1)]
+      .filter((value): value is string => value !== undefined)
+      .sort()
+      .at(-1) ?? "";
   return xml(
     c,
     <ListBucketResult xmlns={XMLNS}>
@@ -285,7 +295,7 @@ async function listObjects(c: Context, backend: S3Backend, bucketName: string): 
           {v2 ? (
             <NextContinuationToken>{result.cursor}</NextContinuationToken>
           ) : (
-            <NextMarker>{result.objects.at(-1)?.key ?? ""}</NextMarker>
+            <NextMarker>{nextMarker}</NextMarker>
           )}
         </>
       ) : (

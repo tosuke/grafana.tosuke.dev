@@ -1,10 +1,10 @@
 export type S3HttpMetadata = {
-  readonly contentType?: string;
-  readonly contentLanguage?: string;
-  readonly contentDisposition?: string;
-  readonly contentEncoding?: string;
-  readonly cacheControl?: string;
-  readonly cacheExpiry?: Date;
+  readonly contentType?: string | undefined;
+  readonly contentLanguage?: string | undefined;
+  readonly contentDisposition?: string | undefined;
+  readonly contentEncoding?: string | undefined;
+  readonly cacheControl?: string | undefined;
+  readonly cacheExpiry?: Date | undefined;
 };
 
 export type S3ObjectMetadata = {
@@ -34,6 +34,7 @@ export type S3ObjectBody = S3ObjectMetadata & {
 export type S3GetResult =
   | { readonly kind: "found"; readonly object: S3ObjectBody }
   | { readonly kind: "not-found" }
+  | { readonly kind: "range-not-satisfiable"; readonly size: number }
   | { readonly kind: "not-modified"; readonly object: S3ObjectMetadata }
   | { readonly kind: "precondition-failed"; readonly object: S3ObjectMetadata };
 
