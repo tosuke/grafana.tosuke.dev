@@ -222,6 +222,22 @@ describe("CompositeS3Backend", () => {
     expect(fallback.listCalls).toEqual([]);
   });
 
+  it("returns every object from a single source", async () => {
+    const keys = [
+      "ltx/0000/0000000000000001.ltx",
+      "ltx/0000/0000000000000002.ltx",
+      "ltx/0000/0000000000000003.ltx",
+    ];
+    const explicit = new MemoryBackend(keys);
+    const backend = composite([{ prefix: "ltx/0000/", backend: explicit }]);
+
+    const page = await backend.listObjects({ prefix: "ltx/0000/", limit: 1000 });
+
+    expect(page).toMatchObject({ truncated: false });
+    expect(page.objects.map(({ key }) => key)).toEqual(keys);
+    expect(explicit.listCalls).toHaveLength(keys.length);
+  });
+
   it("groups shared delimiter prefixes across sources", async () => {
     const first = new MemoryBackend(["a/x/1", "a/x/2"]);
     const second = new MemoryBackend(["a/y/1"]);

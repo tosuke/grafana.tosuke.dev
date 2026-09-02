@@ -136,6 +136,7 @@ export class CompositeS3Backend implements S3Backend {
       if (next.entry.kind === "object") {
         objects.push(next.entry.object);
         await this.#consume(next.state);
+        await this.#ensureHead(next.state);
       } else {
         delimitedPrefixes.push(next.entry.key);
         for (const state of states) {
