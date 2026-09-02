@@ -1,9 +1,10 @@
 import { Container } from "@cloudflare/containers";
 import { env, tracing } from "cloudflare:workers";
 import { createWorkersAI } from "workers-ai-provider";
-import { decodeWebDAVMethod, DOLTXStore, webdavApp } from "./lib/ltx-webdav";
 import { createAi } from "./lib/ai";
 import { Litestream } from "./lib/litestream";
+import { createS3App } from "./lib/s3";
+import { R2S3Backend } from "./lib/s3-r2-backend";
 import {
   attributes,
   environmentResourceAttributes,
@@ -21,10 +22,12 @@ import { compressionGzip, createGrpcWebTransport } from "./lib/grpc";
 import * as z from "zod/mini";
 import { getJWKSet } from "./lib/auth";
 import { createRendererApp } from "./lib/renderer";
+import { DOS3Backend, DOS3Store } from "./lib/s3-do-backend";
+import { CompositeS3Backend } from "./lib/s3-composite-backend";
 
 export interface GrafanaRPC extends Rpc.DurableObjectBranded {
-  ltxStore(): DOLTXStore;
   litestream(): Litestream;
+  s3Store(): DOS3Store;
 }
 
 export function grafana(): DurableObjectStub<GrafanaRPC> {
@@ -86,12 +89,13 @@ export class Grafana extends Container implements GrafanaRPC {
     await handlePingFakeLive(this, this.ctx);
   }
 
-  ltxStore() {
-    return new DOLTXStore(this.ctx);
-  }
-
   litestream() {
     return Litestream.create(this.ctx, "/usr/local/bin/litestream", "/tmp/litestream.sock");
+  }
+
+  #_s3Store = new DOS3Store(this.ctx.storage);
+  s3Store() {
+    return this.#_s3Store;
   }
 
   async scheduleScrapeMetrics() {
@@ -269,12 +273,25 @@ Grafana.outboundByHost = {
   "home-prometheus.worker": (req) => env.HOME_PROMETHEUS.fetch(req),
 };
 
-const webdav = webdavApp(() => grafana().ltxStore());
-Grafana.outboundByHost["replica.worker"] = async (req, env) => {
-  req = decodeWebDAVMethod(req);
-  const response = await webdav.fetch(req, env);
-  return response;
-};
+const doBackend = new DOS3Backend(() => grafana().s3Store());
+const r2Backend = new R2S3Backend(env.GRAFANA_LTX_BUCKET);
+const s3App = createS3App(
+  "grafana-ltx",
+  new CompositeS3Backend(
+    [
+      {
+        prefix: "ltx/0000/",
+        backend: doBackend,
+      },
+      {
+        prefix: "ltx/0001/",
+        backend: doBackend,
+      },
+    ],
+    r2Backend,
+  ),
+);
+Grafana.outboundByHost["s3.worker"] = (req) => s3App.fetch(req);
 
 const ai = createAi(
   (modelId, { reasoningEffort }) => {
