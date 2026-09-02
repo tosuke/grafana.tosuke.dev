@@ -204,14 +204,26 @@ export class CompositeS3Backend implements S3Backend {
   }
 
   #sourcesFor(prefix: string): readonly RouteSource[] {
+    const enclosingRoute = this.#routes.find((route) => prefix.startsWith(route.prefix));
+    if (enclosingRoute) {
+      return [
+        {
+          id: enclosingRoute.prefix,
+          route: enclosingRoute,
+          backend: enclosingRoute.backend,
+          prefix,
+        },
+      ];
+    }
+
     const sources: RouteSource[] = [];
     for (const route of this.#routes) {
-      if (!prefix.startsWith(route.prefix) && !route.prefix.startsWith(prefix)) continue;
+      if (!route.prefix.startsWith(prefix)) continue;
       sources.push({
         id: route.prefix,
         route,
         backend: route.backend,
-        prefix: prefix.startsWith(route.prefix) ? prefix : route.prefix,
+        prefix: route.prefix,
       });
     }
     if (this.#defaultBackend !== undefined) {

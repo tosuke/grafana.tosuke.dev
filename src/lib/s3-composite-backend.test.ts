@@ -210,6 +210,18 @@ describe("CompositeS3Backend", () => {
     expect(objects).toEqual(["a/route", "b/default", "c/route", "d/default"]);
   });
 
+  it("does not query the default backend below an explicit route", async () => {
+    const explicit = new MemoryBackend(["a/route/item"]);
+    const fallback = new MemoryBackend(["a/route/shadowed", "other"]);
+    const backend = composite([{ prefix: "a/route/", backend: explicit }], fallback);
+
+    const page = await backend.listObjects({ prefix: "a/route/", limit: 10 });
+
+    expect(page.objects.map(({ key }) => key)).toEqual(["a/route/item"]);
+    expect(explicit.listCalls).toHaveLength(1);
+    expect(fallback.listCalls).toEqual([]);
+  });
+
   it("groups shared delimiter prefixes across sources", async () => {
     const first = new MemoryBackend(["a/x/1", "a/x/2"]);
     const second = new MemoryBackend(["a/y/1"]);
