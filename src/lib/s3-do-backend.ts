@@ -16,18 +16,13 @@ const CHUNK_SIZE = 1024 * 1024;
 export class DOS3Backend implements S3Backend {
   constructor(private readonly getStore: () => Rpc.Result<DOS3Store>) {}
 
-  #_store?: Rpc.Result<DOS3Store>;
-  private get store() {
-    return (this.#_store ??= this.getStore());
-  }
-
   async getObject(key: string, options: S3GetOptions) {
-    using result = await this.store.getObject(key, options);
+    using result = await this.getStore().getObject(key, options);
     return result;
   }
 
   async putObject(key: string, body: ReadableStream<Uint8Array> | null, options: S3PutOptions) {
-    const upload = this.store.createUpload(key, options);
+    const upload = this.getStore().createUpload(key, options);
     try {
       using part = await upload.uploadPart(1, body);
       return await upload.complete([part]);
@@ -42,16 +37,16 @@ export class DOS3Backend implements S3Backend {
   }
 
   async deleteObjects(keys: readonly string[]) {
-    await this.store.deleteObjects(keys);
+    await this.getStore().deleteObjects(keys);
   }
 
   async listObjects(options: S3ListOptions) {
-    using result = await this.store.listObjects(options);
+    using result = await this.getStore().listObjects(options);
     return result;
   }
 
   async createMultipartUpload(key: string, options: S3PutOptions): Promise<S3MultipartUpload> {
-    const id = await this.store.createUpload(key, options).getID();
+    const id = await this.getStore().createUpload(key, options).getID();
     return { uploadId: id };
   }
 
@@ -61,17 +56,17 @@ export class DOS3Backend implements S3Backend {
     partNumber: number,
     body: ReadableStream<Uint8Array> | null,
   ) {
-    using result = await this.store.getUpload(key, uploadId).uploadPart(partNumber, body);
+    using result = await this.getStore().getUpload(key, uploadId).uploadPart(partNumber, body);
     return result;
   }
 
   async completeMultipartUpload(key: string, uploadId: string, parts: readonly S3MultipartPart[]) {
-    using result = await this.store.getUpload(key, uploadId).complete(parts);
+    using result = await this.getStore().getUpload(key, uploadId).complete(parts);
     return result;
   }
 
   async abortMultipartUpload(key: string, uploadId: string) {
-    await this.store.getUpload(key, uploadId).abort();
+    await this.getStore().getUpload(key, uploadId).abort();
   }
 }
 

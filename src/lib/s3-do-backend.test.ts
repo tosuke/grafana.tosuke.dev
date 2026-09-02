@@ -14,18 +14,6 @@ describe("DOS3Backend", () => {
     backend = new DOS3Backend(() => currentStub.s3Store());
   });
 
-  it("lazily caches the RPC store for the backend lifetime", async () => {
-    let calls = 0;
-    const cached = new DOS3Backend(() => {
-      calls++;
-      return currentStub.s3Store();
-    });
-    await cached.putObject("cached", stream("x"), { httpMetadata: {} });
-    await cached.getObject("cached", {});
-    await cached.listObjects({ prefix: "", limit: 10 });
-    expect(calls).toBe(1);
-  });
-
   it("applies the schema migration once and keeps it idempotent", async () => {
     await backend.listObjects({ prefix: "", limit: 0 });
     const migration = await sql<{ version: number }>(
