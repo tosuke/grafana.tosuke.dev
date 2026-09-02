@@ -184,7 +184,10 @@ export class DOS3Store extends RpcTarget {
         );
         for (const chunk of chunks) {
           if (offset >= end) break;
-          if (offset + chunk.size <= start) continue;
+          if (offset + chunk.size <= start) {
+            offset += chunk.size;
+            continue;
+          }
 
           controller.enqueue(
             new Uint8Array(chunk.data).subarray(
