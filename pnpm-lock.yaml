@@ -227,7 +227,7 @@ importers:
         version: 2.1.2(@bufbuild/protobuf@2.14.1)
       '@hono/zod-validator':
         specifier: ^0.9.0
-        version: 0.9.0(hono@4.13.5)(zod@4.5.2)
+        version: 0.9.1(hono@4.13.5)(zod@4.5.2)
       '@opentelemetry/semantic-conventions':
         specifier: ^1.43.0
         version: 1.43.0
@@ -591,8 +591,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@hono/zod-validator@0.9.0':
-    resolution: {integrity: sha512-n0ZSXmCiHVIp4Y5wlOOyZCeTd/rsawA/qW1cipB8QOYKZ9N8Tk0nZUZCXho9cu374AN4JpDNKioNKBJ/W+LBug==}
+  '@hono/zod-validator@0.9.1':
+    resolution: {integrity: sha512-iiv6w0qrIc0arfvCtUqBWsvl4fXjzaTcQcCJTTtCnkawF9HHGE+KjEl0ox3gQJ6rKZEgE3mLExlQCF72M+mNuw==}
     peerDependencies:
       hono: '>=4.11.2'
       zod: ^3.25.0 || ^4.0.0
@@ -2421,7 +2421,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@hono/zod-validator@0.9.0(hono@4.13.5)(zod@4.5.2)':
+  '@hono/zod-validator@0.9.1(hono@4.13.5)(zod@4.5.2)':
     dependencies:
       hono: 4.13.5
       zod: 4.5.2
