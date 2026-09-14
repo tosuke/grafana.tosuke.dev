@@ -209,13 +209,13 @@ importers:
     dependencies:
       '@buf/opentelemetry_opentelemetry.bufbuild_es':
         specifier: 2.13.0-20260722205108-41ecbd638b41.1
-        version: 2.13.0-20260722205108-41ecbd638b41.1(@bufbuild/protobuf@2.14.1)
+        version: 2.13.0-20260722205108-41ecbd638b41.1(@bufbuild/protobuf@2.15.0)
       '@buf/prometheus_prometheus.bufbuild_es':
         specifier: 2.13.0-20260707164124-2360da55afce.1
-        version: 2.13.0-20260707164124-2360da55afce.1(@bufbuild/protobuf@2.14.1)
+        version: 2.13.0-20260707164124-2360da55afce.1(@bufbuild/protobuf@2.15.0)
       '@bufbuild/protobuf':
         specifier: ^2.14.0
-        version: 2.14.1
+        version: 2.15.0
       '@cloudflare/containers':
         specifier: ^0.3.7
         version: 0.3.7
@@ -224,7 +224,7 @@ importers:
         version: 1.4.0(supports-color@10.2.2)
       '@connectrpc/connect':
         specifier: ^2.1.2
-        version: 2.1.2(@bufbuild/protobuf@2.14.1)
+        version: 2.1.2(@bufbuild/protobuf@2.15.0)
       '@hono/zod-validator':
         specifier: ^0.9.0
         version: 0.9.0(hono@4.13.7)(zod@4.5.2)
@@ -333,8 +333,8 @@ packages:
     peerDependencies:
       '@bufbuild/protobuf': ^2.13.0
 
-  '@bufbuild/protobuf@2.14.1':
-    resolution: {integrity: sha512-agRJn3+EJDUe8AvxTx/LnHA/GErvLE62pSaSk7+MwFOtOv8eWBu/qCq2qoZjBjVZ3C2aiFJCveuSs17KMkYGOw==}
+  '@bufbuild/protobuf@2.15.0':
+    resolution: {integrity: sha512-DAheWUkVr/SJTWCc+lg9dhY0eN4SaWlf4+bG1KzHeXbnqt0AfB/NX0Z+VunGlM1ki1B4zVvye27MpKh/svySUA==}
 
   '@cloudflare/containers@0.3.7':
     resolution: {integrity: sha512-DM9dm3FnIBSyiSJ1FLavKwl/lk3oAmTaynCzZQ9pZR0ncRPquSxkxd8Nu2MFILxmDDsPkxKsSNEh9mHHMty4Fw==}
@@ -2407,20 +2407,20 @@ snapshots:
       json-schema: 0.4.0
     optional: true
 
-  '@buf/gogo_protobuf.bufbuild_es@2.13.0-20240617172848-e1dbca2775a7.1(@bufbuild/protobuf@2.14.1)':
+  '@buf/gogo_protobuf.bufbuild_es@2.13.0-20240617172848-e1dbca2775a7.1(@bufbuild/protobuf@2.15.0)':
     dependencies:
-      '@bufbuild/protobuf': 2.14.1
+      '@bufbuild/protobuf': 2.15.0
 
-  '@buf/opentelemetry_opentelemetry.bufbuild_es@2.13.0-20260722205108-41ecbd638b41.1(@bufbuild/protobuf@2.14.1)':
+  '@buf/opentelemetry_opentelemetry.bufbuild_es@2.13.0-20260722205108-41ecbd638b41.1(@bufbuild/protobuf@2.15.0)':
     dependencies:
-      '@bufbuild/protobuf': 2.14.1
+      '@bufbuild/protobuf': 2.15.0
 
-  '@buf/prometheus_prometheus.bufbuild_es@2.13.0-20260707164124-2360da55afce.1(@bufbuild/protobuf@2.14.1)':
+  '@buf/prometheus_prometheus.bufbuild_es@2.13.0-20260707164124-2360da55afce.1(@bufbuild/protobuf@2.15.0)':
     dependencies:
-      '@buf/gogo_protobuf.bufbuild_es': 2.13.0-20240617172848-e1dbca2775a7.1(@bufbuild/protobuf@2.14.1)
-      '@bufbuild/protobuf': 2.14.1
+      '@buf/gogo_protobuf.bufbuild_es': 2.13.0-20240617172848-e1dbca2775a7.1(@bufbuild/protobuf@2.15.0)
+      '@bufbuild/protobuf': 2.15.0
 
-  '@bufbuild/protobuf@2.14.1': {}
+  '@bufbuild/protobuf@2.15.0': {}
 
   '@cloudflare/containers@0.3.7': {}
 
@@ -2497,9 +2497,9 @@ snapshots:
   '@cloudflare/workerd-windows-64@1.20260911.1':
     optional: true
 
-  '@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.14.1)':
+  '@connectrpc/connect@2.1.2(@bufbuild/protobuf@2.15.0)':
     dependencies:
-      '@bufbuild/protobuf': 2.14.1
+      '@bufbuild/protobuf': 2.15.0
 
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
