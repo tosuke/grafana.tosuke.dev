@@ -227,7 +227,7 @@ importers:
         version: 2.1.2(@bufbuild/protobuf@2.15.0)
       '@hono/zod-validator':
         specifier: ^0.9.0
-        version: 0.9.1(hono@4.13.7)(zod@4.5.2)
+        version: 0.9.1(hono@4.13.8)(zod@4.5.2)
       '@opentelemetry/semantic-conventions':
         specifier: ^1.43.0
         version: 1.43.0
@@ -242,7 +242,7 @@ importers:
         version: 1.4.2
       hono:
         specifier: ^4.13.2
-        version: 4.13.7
+        version: 4.13.8
       jose:
         specifier: ^6.2.9
         version: 6.2.9
@@ -1767,8 +1767,8 @@ packages:
     resolution: {integrity: sha512-b1O07XYq8eRuVzBNgJLstU6FYc1tS6wnMtF1I1D9lE8LxZSOGZ7LhxN54yPP6mGw5f2CkXY2BQUL9Fx41qvcIg==}
     engines: {node: '>= 14'}
 
-  hono@4.13.7:
-    resolution: {integrity: sha512-c8/gF9ac8Y78/agExVocyLevgR+JlpNB444Py0FSX8pJoPdYUfUzRcXtYEYGwt6l19qIlVZPN5Mfsw9jFShmQQ==}
+  hono@4.13.8:
+    resolution: {integrity: sha512-/Gng7NfoykZl2pjukW5Z6+8Yxm3BPRf86GTbQnt0SbySkvax4fyL4H3HhY1cCpBGmiW9XDRFzRV+CXK2W8QudQ==}
     engines: {node: '>=16.9.0'}
 
   http-proxy-agent@7.0.2:
@@ -2588,9 +2588,9 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@hono/zod-validator@0.9.1(hono@4.13.7)(zod@4.5.2)':
+  '@hono/zod-validator@0.9.1(hono@4.13.8)(zod@4.5.2)':
     dependencies:
-      hono: 4.13.7
+      hono: 4.13.8
       zod: 4.5.2
 
   '@img/colour@1.1.0': {}
@@ -3421,7 +3421,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  hono@4.13.7: {}
+  hono@4.13.8: {}
 
   http-proxy-agent@7.0.2(supports-color@10.2.2):
     dependencies:
