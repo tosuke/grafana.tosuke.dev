@@ -186,13 +186,13 @@ importers:
         version: 2.2.0(@bufbuild/protobuf@2.15.0)
       '@hono/zod-validator':
         specifier: ^0.9.0
-        version: 0.9.1(hono@4.13.8)(zod@4.5.2)
+        version: 0.9.1(hono@4.13.8)(zod@4.6.5)
       '@opentelemetry/semantic-conventions':
         specifier: ^1.43.0
         version: 1.43.0
       ai:
         specifier: ^7.0.66
-        version: 7.0.111(zod@4.5.2)
+        version: 7.0.111(zod@4.6.5)
       fast-xml-parser:
         specifier: ^5.10.1
         version: 5.11.1
@@ -207,10 +207,10 @@ importers:
         version: 6.2.12
       workers-ai-provider:
         specifier: ^4.0.0
-        version: 4.0.0(@ai-sdk/openai@4.0.42(zod@4.5.2))(@ai-sdk/provider@4.0.17)(ai@7.0.111(zod@4.5.2))
+        version: 4.0.0(@ai-sdk/openai@4.0.42(zod@4.6.5))(@ai-sdk/provider@4.0.17)(ai@7.0.111(zod@4.6.5))
       zod:
         specifier: ^4.4.3
-        version: 4.5.2
+        version: 4.6.5
     devDependencies:
       '@cloudflare/vitest-pool-workers':
         specifier: ^0.22.0
@@ -2328,43 +2328,43 @@ packages:
   zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
-  zod@4.5.2:
-    resolution: {integrity: sha512-XkYXCol10+ba/6F/cueWV+TezUeOqXW0hdeJt5CdXjTYeAgAQg5N03RQdJ80mhfFE72+pblvYMW4wy2Qp4Qbrg==}
+  zod@4.6.5:
+    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
 
 snapshots:
 
-  '@ai-sdk/gateway@4.0.89(zod@4.5.2)':
+  '@ai-sdk/gateway@4.0.89(zod@4.6.5)':
     dependencies:
       '@ai-sdk/provider': 4.0.17
-      '@ai-sdk/provider-utils': 5.0.45(zod@4.5.2)
+      '@ai-sdk/provider-utils': 5.0.45(zod@4.6.5)
       '@vercel/oidc': 3.2.0
-      zod: 4.5.2
+      zod: 4.6.5
 
-  '@ai-sdk/openai@4.0.42(zod@4.5.2)':
+  '@ai-sdk/openai@4.0.42(zod@4.6.5)':
     dependencies:
       '@ai-sdk/provider': 4.0.7
-      '@ai-sdk/provider-utils': 5.0.27(zod@4.5.2)
-      zod: 4.5.2
+      '@ai-sdk/provider-utils': 5.0.27(zod@4.6.5)
+      zod: 4.6.5
     optional: true
 
-  '@ai-sdk/provider-utils@5.0.27(zod@4.5.2)':
+  '@ai-sdk/provider-utils@5.0.27(zod@4.6.5)':
     dependencies:
       '@ai-sdk/provider': 4.0.7
       '@standard-schema/spec': 1.1.0
       '@workflow/serde': 4.1.0
       eventsource-parser: 3.1.1
       undici: 7.29.0
-      zod: 4.5.2
+      zod: 4.6.5
     optional: true
 
-  '@ai-sdk/provider-utils@5.0.45(zod@4.5.2)':
+  '@ai-sdk/provider-utils@5.0.45(zod@4.6.5)':
     dependencies:
       '@ai-sdk/provider': 4.0.17
       '@standard-schema/spec': 1.1.0
       '@workflow/serde': 4.1.0
       eventsource-parser: 3.1.1
       undici: 7.29.0
-      zod: 4.5.2
+      zod: 4.6.5
 
   '@ai-sdk/provider@4.0.17':
     dependencies:
@@ -2556,10 +2556,10 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@hono/zod-validator@0.9.1(hono@4.13.8)(zod@4.5.2)':
+  '@hono/zod-validator@0.9.1(hono@4.13.8)(zod@4.6.5)':
     dependencies:
       hono: 4.13.8
-      zod: 4.5.2
+      zod: 4.6.5
 
   '@img/colour@1.1.0': {}
 
@@ -3144,12 +3144,12 @@ snapshots:
 
   agent-base@7.1.4: {}
 
-  ai@7.0.111(zod@4.5.2):
+  ai@7.0.111(zod@4.6.5):
     dependencies:
-      '@ai-sdk/gateway': 4.0.89(zod@4.5.2)
+      '@ai-sdk/gateway': 4.0.89(zod@4.6.5)
       '@ai-sdk/provider': 4.0.17
-      '@ai-sdk/provider-utils': 5.0.45(zod@4.5.2)
-      zod: 4.5.2
+      '@ai-sdk/provider-utils': 5.0.45(zod@4.6.5)
+      zod: 4.6.5
 
   ansi-regex@5.0.1: {}
 
@@ -3962,12 +3962,12 @@ snapshots:
       '@cloudflare/workerd-linux-arm64': 1.20260921.1
       '@cloudflare/workerd-windows-64': 1.20260921.1
 
-  workers-ai-provider@4.0.0(@ai-sdk/openai@4.0.42(zod@4.5.2))(@ai-sdk/provider@4.0.17)(ai@7.0.111(zod@4.5.2)):
+  workers-ai-provider@4.0.0(@ai-sdk/openai@4.0.42(zod@4.6.5))(@ai-sdk/provider@4.0.17)(ai@7.0.111(zod@4.6.5)):
     dependencies:
       '@ai-sdk/provider': 4.0.17
-      ai: 7.0.111(zod@4.5.2)
+      ai: 7.0.111(zod@4.6.5)
     optionalDependencies:
-      '@ai-sdk/openai': 4.0.42(zod@4.5.2)
+      '@ai-sdk/openai': 4.0.42(zod@4.6.5)
 
   wrangler@4.124.0:
     dependencies:
@@ -4048,4 +4048,4 @@ snapshots:
 
   zod@4.4.3: {}
 
-  zod@4.5.2: {}
+  zod@4.6.5: {}
